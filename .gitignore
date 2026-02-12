@@ -1,0 +1,4 @@
+*.log
+*.bmp
+backup.txt
+build/
