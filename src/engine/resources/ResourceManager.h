@@ -25,6 +25,7 @@ public:
 
     std::shared_ptr<Shader> loadShader(const std::string& name, const std::string& vertPath, const std::string& fragPath);
     std::shared_ptr<Shader> getShader(const std::string& name) const;
+    void reloadAllShaders();
 
     std::shared_ptr<Texture> loadTexture(const std::string& name, const std::string& path);
     std::shared_ptr<Texture> getTexture(const std::string& name) const;

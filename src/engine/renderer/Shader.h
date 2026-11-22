@@ -10,11 +10,14 @@ class Shader
 {
     Logger logger;
     unsigned int ID = 0;
+    std::string vertexPath;
+    std::string fragmentPath;
     std::unordered_map<std::string, int> uniformCache;
 
     std::string readFile(const char* path);
-    void checkCompileErrors(unsigned int shader, const std::string& type);
-    int getUniformLocation(const std::string& name);
+    bool checkCompileErrors(unsigned int shader, const std::string& type);
+    unsigned int compileProgram(const std::string& vPath, const std::string& fPath);
+    int getUniformLocation(const std::string& name, bool warnIfMissing = true);
 public:
     Shader(const char* vPath, const char* fPath);
     ~Shader();
@@ -22,7 +25,9 @@ public:
     Shader(const Shader&) = delete;
     Shader& operator=(const Shader&) = delete;
 
+    bool reload();
     void use();
+    bool hasUniform(const std::string& name);
     // Setters
     void setMat4(const std::string& name, const Mat4& mat);
     void setVec3(const std::string& name, const Vec3& vec);

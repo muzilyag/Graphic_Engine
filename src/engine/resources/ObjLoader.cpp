@@ -1,6 +1,5 @@
 #include "engine/resources/ObjLoader.h"
 #include "engine/utils/Logger.h"
-#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
@@ -91,15 +90,13 @@ namespace
         return key;
     }
 
-    Vec3 safeNormalize(const Vec3& v)
+    Vec3 fallbackUpIfZero(const Vec3& v)
     {
-        float lenSq = v.x * v.x + v.y * v.y + v.z * v.z;
-        if (lenSq > 1e-12f)
+        if (v.x == 0.0f && v.y == 0.0f && v.z == 0.0f)
         {
-            float invLen = 1.0f / sqrtf(lenSq);
-            return { v.x * invLen, v.y * invLen, v.z * invLen };
+            return { 0.0f, 1.0f, 0.0f };
         }
-        return { 0.0f, 1.0f, 0.0f };
+        return v;
     }
 }
 
@@ -155,7 +152,7 @@ std::unique_ptr<Mesh> ObjLoader::load(const std::string& path)
             Vec3 norm{};
             if (iss >> norm.x >> norm.y >> norm.z)
             {
-                normals.push_back(safeNormalize(norm));
+                normals.push_back(fallbackUpIfZero(Vec3::normalize(norm)));
             }
         }
         else if (prefix == "f")
@@ -193,7 +190,7 @@ std::unique_ptr<Mesh> ObjLoader::load(const std::string& path)
                 {
                     Vec3 e1 = positions[tri[1].v] - positions[tri[0].v];
                     Vec3 e2 = positions[tri[2].v] - positions[tri[0].v];
-                    flatNormal = safeNormalize(Vec3::cross(e1, e2));
+                    flatNormal = fallbackUpIfZero(Vec3::normalize(Vec3::cross(e1, e2)));
                 }
 
                 for (int corner = 0; corner < 3; ++corner)

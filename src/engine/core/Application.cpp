@@ -1,9 +1,15 @@
 #include "engine/core/Application.h"
 #include "engine/platform/GLLoader.h"
+#include <iomanip>
+#include <sstream>
 
-Application::Application(int width, int height, const char* title) : window(width, height, title)
+Application::Application(int width, int height, const char* title)
+    : baseTitle(title ? title : "Engine"), window(width, height, title)
 {
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
     resources.initDefaults();
     renderer.init(resources);
     runTime = 0.0f;
@@ -21,9 +27,10 @@ void Application::run()
     {
         long long now;
         QueryPerformanceCounter((LARGE_INTEGER*)&now);
-        float dt = (float)(now - last) / freq;
+        float rawDt = (float)(now - last) / freq;
         last = now;
 
+        float dt = rawDt;
         if (dt > 0.1f)
         {
             dt = 0.1f;
@@ -34,12 +41,52 @@ void Application::run()
         onUpdate(dt);
         onRender();
         window.swapBuffers();
+        updateWindowTitle(rawDt);
     }
 
     onShutdown();
     scene.clear();
     renderer.shutdown();
     resources.clear();
+}
+
+void Application::updateWindowTitle(float dt)
+{
+    fpsAccumulator += dt;
+    ++frameCounter;
+
+    if (fpsAccumulator >= 0.25f)
+    {
+        float fps = static_cast<float>(frameCounter) / fpsAccumulator;
+        float ms = (fpsAccumulator / static_cast<float>(frameCounter)) * 1000.0f;
+        const RenderStats& st = renderer.getStats();
+
+        std::ostringstream oss;
+        oss << baseTitle << " | " << static_cast<int>(fps + 0.5f)
+            << " FPS (" << std::fixed << std::setprecision(2) << ms << " ms)"
+            << " | Vis: " << st.visibleObjects << "/" << st.totalObjects
+            << " | DC: " << st.drawCalls;
+        if (wireframeMode)
+        {
+            oss << " [Wireframe]";
+        }
+        if (!renderer.isBloomEnabled())
+        {
+            oss << " [No Bloom]";
+        }
+        if (!renderer.isFxaaEnabled())
+        {
+            oss << " [No FXAA]";
+        }
+        if (!renderer.isFrustumCullingEnabled())
+        {
+            oss << " [No Cull]";
+        }
+        window.setTitle(oss.str());
+
+        fpsAccumulator = 0.0f;
+        frameCounter = 0;
+    }
 }
 
 void Application::updateInput(float dt)
@@ -83,7 +130,52 @@ void Application::updateInput(float dt)
 
     if (window.isFocused())
     {
-        camera.processKeyboard(window.getKeys(), dt);
+        bool* keys = window.getKeys();
+        camera.processKeyboard(keys, dt);
+
+        bool f5Down = keys[VK_F5];
+        if (f5Down && !wasF5Down)
+        {
+            resources.reloadAllShaders();
+        }
+        wasF5Down = f5Down;
+
+        bool f2Down = keys[VK_F2];
+        if (f2Down && !wasF2Down)
+        {
+            wireframeMode = !wireframeMode;
+            renderer.setWireframe(wireframeMode);
+        }
+        wasF2Down = f2Down;
+
+        bool f3Down = keys[VK_F3];
+        if (f3Down && !wasF3Down)
+        {
+            renderer.setBloomEnabled(!renderer.isBloomEnabled());
+        }
+        wasF3Down = f3Down;
+
+        bool f4Down = keys[VK_F4];
+        if (f4Down && !wasF4Down)
+        {
+            renderer.setFxaaEnabled(!renderer.isFxaaEnabled());
+        }
+        wasF4Down = f4Down;
+
+        bool f6Down = keys[VK_F6];
+        if (f6Down && !wasF6Down)
+        {
+            renderer.setFrustumCullingEnabled(!renderer.isFrustumCullingEnabled());
+        }
+        wasF6Down = f6Down;
+    }
+    else
+    {
+        wasF5Down = false;
+        wasF2Down = false;
+        wasF3Down = false;
+        wasF4Down = false;
+        wasF6Down = false;
     }
 }
 
@@ -98,10 +190,10 @@ void Application::onRender()
 
     float aspect = static_cast<float>(w) / static_cast<float>(h);
     Mat4 view = camera.getViewMatrix();
-    Mat4 projection = Mat4::perspective(0.785f, aspect, 0.1f, 100.0f);
+    Mat4 projection = Mat4::perspective(0.785f, aspect, 0.1f, 150.0f);
 
-    renderer.clear(0.1f, 0.1f, 0.2f, 1.0f);
-    renderer.beginFrame(view, projection, camera.getPos());
+    renderer.setClearColor(0.02f, 0.02f, 0.04f, 1.0f);
+    renderer.beginFrame(view, projection, camera.getPos(), w, h);
     scene.submit(renderer);
     renderer.flush();
 }

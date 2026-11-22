@@ -4,3 +4,4 @@
 *.obj
 backup.txt
 build/
+.vscode/

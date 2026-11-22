@@ -1,5 +1,6 @@
 #ifndef APPLICATION_H
 #define APPLICATION_H
+#include <string>
 #include "engine/platform/Window.h"
 #include "engine/renderer/Renderer.h"
 #include "engine/resources/ResourceManager.h"
@@ -8,8 +9,19 @@
 
 class Application
 {
+    std::string baseTitle;
     bool wasCursorLocked = false;
+    bool wasF5Down = false;
+    bool wasF2Down = false;
+    bool wasF3Down = false;
+    bool wasF4Down = false;
+    bool wasF6Down = false;
+    bool wireframeMode = false;
+    float fpsAccumulator = 0.0f;
+    int frameCounter = 0;
+
     void updateInput(float dt);
+    void updateWindowTitle(float dt);
 protected:
     Window window;
     ResourceManager resources;

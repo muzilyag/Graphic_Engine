@@ -3,12 +3,15 @@ project(Engine)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(ENGINE_SOURCES
     "src/engine/core/Application.cpp"
     "src/engine/platform/Window.cpp"
     "src/engine/platform/GLLoader.cpp"
+    "src/engine/math/Bounds.cpp"
     "src/engine/math/Math3d.cpp"
+    "src/engine/renderer/Framebuffer.cpp"
     "src/engine/renderer/Mesh.cpp"
     "src/engine/renderer/Primitives.cpp"
     "src/engine/renderer/Renderer.cpp"

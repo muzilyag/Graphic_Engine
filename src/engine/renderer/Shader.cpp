@@ -3,37 +3,10 @@
 #include <fstream>
 #include <sstream>
 
-Shader::Shader(const char* vPath, const char* fPath) : logger("Shader")
+Shader::Shader(const char* vPath, const char* fPath)
+    : logger("Shader"), vertexPath(vPath ? vPath : ""), fragmentPath(fPath ? fPath : "")
 {
-    std::string vCode = readFile(vPath);
-    std::string fCode = readFile(fPath);
-    if (vCode.empty() || fCode.empty())
-    {
-        logger.error("Shader source is empty, skipping compilation.");
-        return;
-    }
-
-    const char* vPtr = vCode.c_str();
-    const char* fPtr = fCode.c_str();
-
-    unsigned int v = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(v, 1, &vPtr, NULL);
-    glCompileShader(v);
-    checkCompileErrors(v, "VERTEX");
-
-    unsigned int f = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(f, 1, &fPtr, NULL);
-    glCompileShader(f);
-    checkCompileErrors(f, "FRAGMENT");
-
-    ID = glCreateProgram();
-    glAttachShader(ID, v);
-    glAttachShader(ID, f);
-    glLinkProgram(ID);
-    checkCompileErrors(ID, "PROGRAM");
-
-    glDeleteShader(v);
-    glDeleteShader(f);
+    ID = compileProgram(vertexPath, fragmentPath);
 }
 
 Shader::~Shader()
@@ -45,12 +18,85 @@ Shader::~Shader()
     }
 }
 
+unsigned int Shader::compileProgram(const std::string& vPath, const std::string& fPath)
+{
+    std::string vCode = readFile(vPath.c_str());
+    std::string fCode = readFile(fPath.c_str());
+    if (vCode.empty() || fCode.empty())
+    {
+        logger.error("Shader source is empty, skipping compilation.");
+        return 0;
+    }
+
+    const char* vPtr = vCode.c_str();
+    const char* fPtr = fCode.c_str();
+
+    unsigned int v = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(v, 1, &vPtr, NULL);
+    glCompileShader(v);
+    bool vOk = checkCompileErrors(v, "VERTEX");
+
+    unsigned int f = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(f, 1, &fPtr, NULL);
+    glCompileShader(f);
+    bool fOk = checkCompileErrors(f, "FRAGMENT");
+
+    if (!vOk || !fOk)
+    {
+        glDeleteShader(v);
+        glDeleteShader(f);
+        return 0;
+    }
+
+    unsigned int program = glCreateProgram();
+    glAttachShader(program, v);
+    glAttachShader(program, f);
+    glLinkProgram(program);
+    bool linkOk = checkCompileErrors(program, "PROGRAM");
+
+    glDeleteShader(v);
+    glDeleteShader(f);
+
+    if (!linkOk)
+    {
+        glDeleteProgram(program);
+        return 0;
+    }
+
+    return program;
+}
+
+bool Shader::reload()
+{
+    unsigned int newProgram = compileProgram(vertexPath, fragmentPath);
+    if (newProgram == 0)
+    {
+        logger.warn("Shader reload failed, keeping previous program: " + vertexPath);
+        return false;
+    }
+
+    if (ID != 0)
+    {
+        glDeleteProgram(ID);
+    }
+
+    ID = newProgram;
+    uniformCache.clear();
+    logger.info("Reloaded shader: " + vertexPath + ", " + fragmentPath);
+    return true;
+}
+
 void Shader::use() 
 { 
     glUseProgram(ID); 
 }
 
-int Shader::getUniformLocation(const std::string& name)
+bool Shader::hasUniform(const std::string& name)
+{
+    return getUniformLocation(name, false) != -1;
+}
+
+int Shader::getUniformLocation(const std::string& name, bool warnIfMissing)
 {
     auto it = uniformCache.find(name);
     if (it != uniformCache.end())
@@ -59,7 +105,7 @@ int Shader::getUniformLocation(const std::string& name)
     }
 
     int location = glGetUniformLocation(ID, name.c_str());
-    if (location == -1)
+    if (location == -1 && warnIfMissing)
     {
         logger.warn("Uniform not found or unused: " + name);
     }
@@ -77,7 +123,7 @@ void Shader::setMat4(const std::string& name, const Mat4& mat)
     }
 }
 
-void Shader::checkCompileErrors(unsigned int shader, const std::string& type) 
+bool Shader::checkCompileErrors(unsigned int shader, const std::string& type) 
 {
     int success = 0;
     char infoLog[1024];
@@ -88,6 +134,7 @@ void Shader::checkCompileErrors(unsigned int shader, const std::string& type)
         {
             glGetShaderInfoLog(shader, 1024, NULL, infoLog);
             logger.error("ERROR::SHADER_COMPILATION_ERROR of type: " + type + "; " + infoLog);
+            return false;
         }
     } 
     else 
@@ -97,8 +144,10 @@ void Shader::checkCompileErrors(unsigned int shader, const std::string& type)
         {
             glGetProgramInfoLog(shader, 1024, NULL, infoLog);
             logger.error("ERROR::PROGRAM_LINKING_ERROR of type: " + type + "; " + infoLog);
+            return false;
         }
     }
+    return true;
 }
 
 std::string Shader::readFile(const char* path) 
@@ -143,8 +192,32 @@ void Shader::setInt(const std::string& name, int value)
 
 void Shader::setMaterial(const std::string& name, const Material& mater) 
 {
-    setVec3(name + ".ambient", mater.ambient);
-    setVec3(name + ".diffuse", mater.diffuse);
-    setVec3(name + ".specular", mater.specular);
-    setFloat(name + ".shininess", mater.shininess);
+    if (hasUniform(name + ".albedo"))
+    {
+        setVec3(name + ".albedo", mater.albedo);
+    }
+    if (hasUniform(name + ".metallic"))
+    {
+        setFloat(name + ".metallic", mater.metallic);
+    }
+    if (hasUniform(name + ".roughness"))
+    {
+        setFloat(name + ".roughness", mater.roughness);
+    }
+    if (hasUniform(name + ".ao"))
+    {
+        setFloat(name + ".ao", mater.ao);
+    }
+    if (hasUniform(name + ".emissive"))
+    {
+        setVec3(name + ".emissive", mater.emissive);
+    }
+    if (hasUniform(name + ".opacity"))
+    {
+        setFloat(name + ".opacity", mater.opacity);
+    }
+    if (hasUniform(name + ".alphaCutoff"))
+    {
+        setFloat(name + ".alphaCutoff", mater.alphaCutoff);
+    }
 }

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 void ConsoleHandler::handle(LogLevel level, const std::string& message)
 {
@@ -78,9 +79,8 @@ void LogSystem::dispatch(LogLevel level, const std::string& context, const std::
     }
 }
 
-Logger::Logger(const std::string& name)
+Logger::Logger(std::string name) : contextName(std::move(name))
 {
-    contextName = std::move(name);
 }
 
 void Logger::info(const std::string& message) const

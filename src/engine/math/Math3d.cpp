@@ -1,7 +1,7 @@
 #include "engine/math/Math3d.h"
 
 Vec3 Vec3::operator+(const Vec3& b) const
-{   
+{
     return {x + b.x, y + b.y, z + b.z};
 }
 Vec3 Vec3::operator-(const Vec3& b) const
@@ -22,80 +22,96 @@ Vec3 Vec3::cross(const Vec3& a, const Vec3& b)
 }
 Vec3 Vec3::normalize(const Vec3& v)
 {
-    float len = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
-    return {v.x / len, v.y / len, v.z / len};
+    float lenSq = v.x * v.x + v.y * v.y + v.z * v.z;
+    if (lenSq > 1e-12f)
+    {
+        float invLen = 1.0f / sqrtf(lenSq);
+        return {v.x * invLen, v.y * invLen, v.z * invLen};
+    }
+    return {0.0f, 0.0f, 0.0f};
 }
 Vec3 Vec3::lerp(const Vec3& a, const Vec3& b, float t)
 {
     return a * (1.f - t) + b * t;
 }
 
-
-Mat4::Mat4() 
-{ 
-    for (int i = 0; i < 16; i++) 
+Mat4::Mat4()
+{
+    for (int i = 0; i < 16; i++)
     {
-        m[i] = 0.0f; 
+        m[i] = 0.0f;
     }
 }
 
-Mat4 Mat4::identity() 
+Mat4 Mat4::identity()
 {
-    Mat4 res; 
+    Mat4 res;
     res.m[0] = res.m[5] = res.m[10] = res.m[15] = 1.0f;
     return res;
 }
 
-Mat4 Mat4::multiply(const Mat4& a, const Mat4& b) 
+Mat4 Mat4::multiply(const Mat4& a, const Mat4& b)
 {
     Mat4 res;
     for (int r = 0; r < 4; r++)
     {
         for (int c = 0; c < 4; c++)
         {
-            res.m[c * 4 + r] =  a.m[0 * 4 + r] * b.m[c * 4 + 0] + 
-                                a.m[1 * 4 + r] * b.m[c * 4 + 1] + 
-                                a.m[2 * 4 + r] * b.m[c * 4 + 2] + 
-                                a.m[3 * 4 + r] * b.m[c * 4 + 3];
+            res.m[c * 4 + r] = a.m[0 * 4 + r] * b.m[c * 4 + 0] +
+                               a.m[1 * 4 + r] * b.m[c * 4 + 1] +
+                               a.m[2 * 4 + r] * b.m[c * 4 + 2] +
+                               a.m[3 * 4 + r] * b.m[c * 4 + 3];
         }
     }
     return res;
 }
 
-Mat4 Mat4::rotateX(float a) 
+Mat4 Mat4::rotateX(float a)
 {
-    Mat4 r = identity(); 
+    Mat4 r = identity();
     r.m[5] = cosf(a); r.m[6] = sinf(a); r.m[9] = -sinf(a); r.m[10] = cosf(a);
     return r;
 }
 
-Mat4 Mat4::rotateY(float a) 
+Mat4 Mat4::rotateY(float a)
 {
-    Mat4 r = identity(); 
+    Mat4 r = identity();
     r.m[0] = cosf(a); r.m[2] = -sinf(a); r.m[8] = sinf(a); r.m[10] = cosf(a);
     return r;
 }
 
-Mat4 Mat4::rotateZ(float a) 
+Mat4 Mat4::rotateZ(float a)
 {
-    Mat4 r = identity(); 
+    Mat4 r = identity();
     r.m[0] = cosf(a); r.m[1] = sinf(a); r.m[4] = -sinf(a); r.m[5] = cosf(a);
     return r;
 }
 
-Mat4 Mat4::translate(float x, float y, float z) 
+Mat4 Mat4::translate(float x, float y, float z)
 {
-    Mat4 r = identity(); 
+    Mat4 r = identity();
     r.m[12] = x; r.m[13] = y; r.m[14] = z;
     return r;
 }
 
-Mat4 Mat4::perspective(float fov, float asp, float n, float f) 
+Mat4 Mat4::perspective(float fov, float asp, float n, float f)
 {
-    Mat4 r; 
+    Mat4 r;
     float thf = tanf(fov / 2.0f);
     r.m[0] = 1.0f / (asp * thf); r.m[5] = 1.0f / thf; r.m[10] = -(f + n) / (f - n); r.m[11] = -1.0f; r.m[14] = -(2.0f * f * n) / (f - n);
     return r;
+}
+
+Mat4 Mat4::ortho(float l, float r, float b, float t, float n, float f)
+{
+    Mat4 res = identity();
+    res.m[0]  =  2.0f / (r - l);
+    res.m[5]  =  2.0f / (t - b);
+    res.m[10] = -2.0f / (f - n);
+    res.m[12] = -(r + l) / (r - l);
+    res.m[13] = -(t + b) / (t - b);
+    res.m[14] = -(f + n) / (f - n);
+    return res;
 }
 
 Mat4 Mat4::lookAt(Vec3 eye, Vec3 target, Vec3 up)
@@ -107,7 +123,7 @@ Mat4 Mat4::lookAt(Vec3 eye, Vec3 target, Vec3 up)
     res.m[0] = s.x; res.m[4] = s.y; res.m[8] = s.z;
     res.m[1] = u.x; res.m[5] = u.y; res.m[9] = u.z;
     res.m[2] = -f.x; res.m[6] = -f.y; res.m[10] = -f.z;
-    res.m[12] = -Vec3::dot(s, eye); 
+    res.m[12] = -Vec3::dot(s, eye);
     res.m[13] = -Vec3::dot(u, eye);
     res.m[14] = Vec3::dot(f, eye);
     return res;
@@ -118,7 +134,6 @@ Mat4 Mat4::scale(float x, float y, float z)
     Mat4 res = identity();
     res.m[0] = x; res.m[5] = y; res.m[10] = z;
     return res;
-
 }
 
 Mat4 Mat4::fromQuat(const Quat& q)
@@ -183,8 +198,13 @@ float Quat::dot(const Quat& q) const
 
 Quat Quat::normalize(const Quat& q)
 {
-    float len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-    return Quat(q.x / len, q.y / len, q.z / len, q.w / len);
+    float lenSq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    if (lenSq > 1e-12f)
+    {
+        float invLen = 1.0f / sqrtf(lenSq);
+        return Quat(q.x * invLen, q.y * invLen, q.z * invLen, q.w * invLen);
+    }
+    return Quat::identity();
 }
 
 Quat Quat::slerp(const Quat& a, const Quat& b, float t)
@@ -192,13 +212,13 @@ Quat Quat::slerp(const Quat& a, const Quat& b, float t)
     float cosTheta = a.dot(b);
     Quat target = b;
 
-    if(cosTheta < 0.0f)
+    if (cosTheta < 0.0f)
     {
         cosTheta = -cosTheta;
         target = Quat(-b.x, -b.y, -b.z, -b.w);
     }
 
-    if(cosTheta > 0.9995f)
+    if (cosTheta > 0.9995f)
     {
         return normalize(Quat(
             a.x + (target.x - a.x) * t,

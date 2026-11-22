@@ -37,7 +37,8 @@ struct Mat4
     static Mat4 rotateY(float a);
     static Mat4 rotateZ(float a);
     static Mat4 translate(float x, float y, float z);
-    static Mat4 perspective(float fov, float asp, float n, float f) ;
+    static Mat4 perspective(float fov, float asp, float n, float f);
+    static Mat4 ortho(float l, float r, float b, float t, float n, float f);
     static Mat4 lookAt(Vec3 eye, Vec3 target, Vec3 up);
     static Mat4 scale(float x, float y, float z);
     static Mat4 fromQuat(const Quat& q);

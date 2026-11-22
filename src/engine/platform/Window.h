@@ -1,6 +1,13 @@
 #ifndef WINDOW_H
 #define WINDOW_H
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
+#include <string>
 #include "engine/utils/Logger.h"
 
 class Window 
@@ -34,5 +41,6 @@ public:
     int getHeight() const { return height; }
     // Setters
     void setCursorLocked(bool locked);
+    void setTitle(const std::string& title);
 };
 #endif

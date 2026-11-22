@@ -15,6 +15,7 @@ public:
     Texture(const Texture&) = delete;
     Texture& operator=(const Texture&) = delete;
 
+    bool isValid() const { return ID != 0; }
     void bind(unsigned int unit = 0) const;
 };
 #endif

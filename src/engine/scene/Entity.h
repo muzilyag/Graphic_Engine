@@ -14,6 +14,7 @@ class Entity
     std::shared_ptr<Mesh> mesh;
     std::shared_ptr<Shader> shader;
     Material material;
+    bool castsShadows = true;
 public:
     Entity(std::string name, std::shared_ptr<Mesh> mesh, std::shared_ptr<Shader> shader, const Material& material);
 
@@ -24,9 +25,11 @@ public:
     const Material& getMaterial() const { return material; }
     std::shared_ptr<Mesh> getMesh() const { return mesh; }
     std::shared_ptr<Shader> getShader() const { return shader; }
+    bool getCastsShadows() const { return castsShadows; }
 
     void setMesh(std::shared_ptr<Mesh> inMesh);
     void setShader(std::shared_ptr<Shader> inShader);
     void setMaterial(const Material& inMaterial);
+    void setCastsShadows(bool value) { castsShadows = value; }
 };
 #endif

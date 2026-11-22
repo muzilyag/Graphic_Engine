@@ -45,6 +45,26 @@ std::shared_ptr<Shader> ResourceManager::getShader(const std::string& name) cons
     return nullptr;
 }
 
+void ResourceManager::reloadAllShaders()
+{
+    int succeeded = 0;
+    int failed = 0;
+
+    for (auto& pair : shaders)
+    {
+        if (pair.second && pair.second->reload())
+        {
+            ++succeeded;
+        }
+        else
+        {
+            ++failed;
+        }
+    }
+
+    logger.info("Shaders reloaded: " + std::to_string(succeeded) + " ok, " + std::to_string(failed) + " failed.");
+}
+
 std::shared_ptr<Texture> ResourceManager::loadTexture(const std::string& name, const std::string& path)
 {
     auto it = textures.find(name);
@@ -54,6 +74,11 @@ std::shared_ptr<Texture> ResourceManager::loadTexture(const std::string& name, c
     }
 
     auto texture = std::make_shared<Texture>(path);
+    if (!texture->isValid())
+    {
+        return nullptr;
+    }
+
     textures[name] = texture;
     return texture;
 }

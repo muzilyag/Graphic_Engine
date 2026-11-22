@@ -1,6 +1,38 @@
 #include "engine/platform/Window.h"
 #include "engine/platform/GLLoader.h"
 
+namespace
+{
+    void WINAPI glDebugCallback(GLenum source, GLenum type, unsigned int id, GLenum severity, int length, const char* message, const void* userParam)
+    {
+        (void)source;
+        (void)type;
+        (void)length;
+        (void)userParam;
+
+        if (severity == GL_DEBUG_SEVERITY_NOTIFICATION)
+        {
+            return;
+        }
+
+        Logger glLogger("OpenGL");
+        std::string text = "[" + std::to_string(id) + "] " + (message ? message : "");
+
+        if (severity == GL_DEBUG_SEVERITY_HIGH)
+        {
+            glLogger.error(text);
+        }
+        else if (severity == GL_DEBUG_SEVERITY_MEDIUM)
+        {
+            glLogger.warn(text);
+        }
+        else
+        {
+            glLogger.info(text);
+        }
+    }
+}
+
 Window::Window(int w, int h, const char* title) : logger("Window")
 {
     WNDCLASSA wc = { 0 };
@@ -33,11 +65,15 @@ Window::Window(int w, int h, const char* title) : logger("Window")
 
     if (wglCreateContextAttribsARB)
     {
+        int flags = WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
+#ifndef NDEBUG
+        flags |= WGL_CONTEXT_DEBUG_BIT_ARB;
+#endif
         int attribs[] = {
             WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
             WGL_CONTEXT_MINOR_VERSION_ARB, 3,
             WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-            WGL_CONTEXT_FLAGS_ARB,         WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+            WGL_CONTEXT_FLAGS_ARB,         flags,
             0
         };
 
@@ -60,6 +96,20 @@ Window::Window(int w, int h, const char* title) : logger("Window")
     }
 
     loadExtensions();
+
+#ifndef NDEBUG
+    if (glDebugMessageCallback)
+    {
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback(glDebugCallback, nullptr);
+        if (glDebugMessageControl)
+        {
+            glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
+        }
+        logger.info("OpenGL Debug Output enabled.");
+    }
+#endif
 
     const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
     const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
@@ -199,4 +249,12 @@ void Window::setCursorLocked(bool locked)
     }
     isCursorLocked = locked;
     ShowCursor(!locked);
+}
+
+void Window::setTitle(const std::string& title)
+{
+    if (hwnd)
+    {
+        SetWindowTextA(hwnd, title.c_str());
+    }
 }

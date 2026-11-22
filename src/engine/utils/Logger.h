@@ -55,7 +55,7 @@ class Logger
     std::string contextName;
 public:
     Logger() = delete;
-    explicit Logger(const std::string& name);
+    explicit Logger(std::string name);
     void info(const std::string& message) const;
     void warn(const std::string& message) const;
     void error(const std::string& message) const;
