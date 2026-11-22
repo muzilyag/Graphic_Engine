@@ -16,6 +16,8 @@ class Application
     bool wasF3Down = false;
     bool wasF4Down = false;
     bool wasF6Down = false;
+    bool wasF7Down = false;
+    bool wasF8Down = false;
     bool wireframeMode = false;
     float fpsAccumulator = 0.0f;
     int frameCounter = 0;

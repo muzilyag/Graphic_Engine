@@ -15,6 +15,10 @@ struct Material {
     vec3 emissive;
     float opacity;
     float alphaCutoff;
+    float transmission;
+    float ior;
+    float refractionStrength;
+    float chromaticAberration;
     sampler2D albedoMap;
     sampler2D normalMap;
     sampler2D metallicMap;
@@ -35,15 +39,37 @@ struct DirectionalLight {
     float intensity;
 };
 
+struct SpotLight {
+    vec3 position;
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float radius;
+    float innerCutOff;
+    float outerCutOff;
+};
+
 #define MAX_POINT_LIGHTS 8
 const float PI = 3.14159265359;
+
+uniform mat4 view;
+uniform mat4 projection;
 
 uniform int activePointLights;
 uniform PointLight pointLights[MAX_POINT_LIGHTS];
 
 uniform int hasDirLight;
 uniform DirectionalLight dirLight;
+
+uniform int hasSpotLight;
+uniform SpotLight spotLight;
+
 uniform sampler2D shadowMap;
+uniform sampler2D ssaoMap;
+uniform sampler2D sceneColorMap;
+uniform int useSSAO;
+uniform int useRefraction;
+uniform vec2 screenSize;
 uniform vec3 sunDirection;
 
 uniform Material material;
@@ -81,7 +107,7 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-vec3 calcBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, float roughness, vec3 F0) {
+vec3 calcBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, float roughness, vec3 F0, float diffuseScale) {
     float NdotL = max(dot(N, L), 0.0);
     if (NdotL <= 0.0) {
         return vec3(0.0);
@@ -97,7 +123,7 @@ vec3 calcBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, float roughne
     vec3 specular = numerator / denominator;
 
     vec3 kS = F;
-    vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
+    vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic) * diffuseScale;
 
     return (kD * albedo / PI + specular) * NdotL;
 }
@@ -167,15 +193,38 @@ void main() {
     float metallic = clamp(material.metallic * texture(material.metallicMap, TexCoord).r, 0.0, 1.0);
     float roughness = clamp(material.roughness * texture(material.roughnessMap, TexCoord).r, 0.04, 1.0);
     float ao = clamp(material.ao * texture(material.aoMap, TexCoord).r, 0.0, 1.0);
+    float transmission = clamp(material.transmission, 0.0, 1.0);
+    float diffuseScale = 1.0 - transmission;
 
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    float ior = max(material.ior, 1.001);
+    float dielectricF0 = pow((ior - 1.0) / (ior + 1.0), 2.0);
+    vec3 baseF0 = (transmission > 0.001) ? vec3(dielectricF0) : vec3(0.04);
+    vec3 F0 = mix(baseF0, albedo, metallic);
+
     vec3 Lo = vec3(0.0);
 
     if (hasDirLight != 0) {
         vec3 L = normalize(-dirLight.direction);
         vec3 radiance = dirLight.color * dirLight.intensity;
         float shadow = calcShadow(FragPosLightSpace, N, L);
-        Lo += (1.0 - shadow) * calcBRDF(N, V, L, albedo, metallic, roughness, F0) * radiance;
+        Lo += (1.0 - shadow) * calcBRDF(N, V, L, albedo, metallic, roughness, F0, diffuseScale) * radiance;
+    }
+
+    if (hasSpotLight != 0) {
+        vec3 toLight = spotLight.position - FragPos;
+        float dist = length(toLight);
+        vec3 L = toLight / max(dist, 0.0001);
+        float theta = dot(L, normalize(-spotLight.direction));
+        float epsilon = max(spotLight.innerCutOff - spotLight.outerCutOff, 0.0001);
+        float cone = clamp((theta - spotLight.outerCutOff) / epsilon, 0.0, 1.0);
+
+        if (cone > 0.0) {
+            float distRatio = dist / max(spotLight.radius, 0.001);
+            float smoothFactor = clamp(1.0 - pow(distRatio, 4.0), 0.0, 1.0);
+            float attenuation = (smoothFactor * smoothFactor) / (dist * dist + 0.25);
+            vec3 radiance = spotLight.color * spotLight.intensity * attenuation * cone;
+            Lo += calcBRDF(N, V, L, albedo, metallic, roughness, F0, diffuseScale) * radiance;
+        }
     }
 
     for (int i = 0; i < activePointLights && i < MAX_POINT_LIGHTS; ++i) {
@@ -188,7 +237,7 @@ void main() {
         float attenuation = (smoothFactor * smoothFactor) / (dist * dist + 0.25);
 
         vec3 radiance = pointLights[i].color * pointLights[i].intensity * attenuation;
-        Lo += calcBRDF(N, V, L, albedo, metallic, roughness, F0) * radiance;
+        Lo += calcBRDF(N, V, L, albedo, metallic, roughness, F0, diffuseScale) * radiance;
     }
 
     vec3 sunDir = normalize(sunDirection);
@@ -196,18 +245,67 @@ void main() {
     vec3 kDAmb = (vec3(1.0) - kSAmb) * (1.0 - metallic);
 
     vec3 skyIrradiance = mix(vec3(0.04, 0.045, 0.06), vec3(0.18, 0.25, 0.38), N.y * 0.5 + 0.5);
-    vec3 diffuseAmbient = kDAmb * albedo * skyIrradiance;
+    vec3 diffuseAmbient = kDAmb * albedo * skyIrradiance * diffuseScale;
 
     vec3 R = reflect(-V, N);
     vec3 envSpec = sampleProceduralEnv(R, sunDir, roughness);
     vec3 specularAmbient = envSpec * kSAmb * (1.0 - roughness * 0.6);
 
-    vec3 ambient = (diffuseAmbient + specularAmbient) * ao;
+    vec2 screenUV = gl_FragCoord.xy / max(screenSize, vec2(1.0));
+
+    float ssao = 1.0;
+    if (useSSAO != 0 && alpha > 0.99 && transmission < 0.001) {
+        ssao = texture(ssaoMap, screenUV).r;
+    }
+
+    vec3 ambient = (diffuseAmbient + specularAmbient) * ao * ssao;
     vec3 result = ambient + Lo + material.emissive;
 
-    FragColor = vec4(result, alpha);
+    float outAlpha = alpha;
+    if (transmission > 0.001) {
+        if (useRefraction != 0) {
+            vec3 I = -V;
+            float eta = 1.0 / ior;
+            vec3 refrDir = refract(I, N, eta);
+            if (dot(refrDir, refrDir) < 1e-5) {
+                refrDir = I;
+            }
+
+            vec3 refrPos = FragPos + refrDir * material.refractionStrength;
+            vec4 refrClip = projection * view * vec4(refrPos, 1.0);
+            vec2 refrUV = (refrClip.xy / max(refrClip.w, 0.0001)) * 0.5 + 0.5;
+            vec2 uvOffset = refrUV - screenUV;
+
+            float maxOffset = 0.15;
+            float offsetLen = length(uvOffset);
+            if (offsetLen > maxOffset) {
+                uvOffset *= (maxOffset / offsetLen);
+            }
+
+            float lod = roughness * 5.0;
+            float ca = material.chromaticAberration;
+            vec2 uvR = clamp(screenUV + uvOffset * (1.0 + ca), vec2(0.002), vec2(0.998));
+            vec2 uvG = clamp(screenUV + uvOffset,              vec2(0.002), vec2(0.998));
+            vec2 uvB = clamp(screenUV + uvOffset * (1.0 - ca), vec2(0.002), vec2(0.998));
+
+            vec3 refractedColor = vec3(
+                textureLod(sceneColorMap, uvR, lod).r,
+                textureLod(sceneColorMap, uvG, lod).g,
+                textureLod(sceneColorMap, uvB, lod).b
+            );
+
+            vec3 glassTint = mix(vec3(1.0), albedo, 0.45);
+            vec3 kT = (vec3(1.0) - kSAmb) * (1.0 - metallic) * transmission;
+            result += refractedColor * glassTint * kT;
+            outAlpha = clamp(max(alpha, transmission), 0.0, 1.0);
+        } else {
+            outAlpha = clamp(alpha * (1.0 - transmission * 0.65), 0.15, 1.0);
+        }
+    }
+
+    FragColor = vec4(result, outAlpha);
 
     float peak = max(result.r, max(result.g, result.b));
     float contrib = max(peak - 1.2, 0.0) / max(peak, 0.0001);
-    BrightColor = vec4(result * contrib, alpha);
+    BrightColor = vec4(result * contrib, outAlpha);
 }

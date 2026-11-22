@@ -50,18 +50,23 @@ void SandboxApp::onInit()
     auto instSphereMesh = resources.registerMesh("inst_sphere", Primitives::createSphere(0.32f, 16, 10));
     auto pyramidMesh    = resources.loadMesh("pyramid", "./assets/models/pyramid.obj");
 
-    auto defaultShader         = resources.loadShader("default", "./assets/shaders/shader.vert", "./assets/shaders/shader.frag");
-    auto defaultInstShader     = resources.loadShader("default_instanced", "./assets/shaders/shader_instanced.vert", "./assets/shaders/shader.frag");
-    auto unlitShader           = resources.loadShader("unlit", "./assets/shaders/unlit.vert", "./assets/shaders/unlit.frag");
-    auto skyboxShader          = resources.loadShader("skybox", "./assets/shaders/skybox.vert", "./assets/shaders/skybox.frag");
-    auto shadowShader          = resources.loadShader("shadow", "./assets/shaders/shadow.vert", "./assets/shaders/shadow.frag");
-    auto shadowInstancedShader = resources.loadShader("shadow_instanced", "./assets/shaders/shadow_instanced.vert", "./assets/shaders/shadow.frag");
-    auto blurShader            = resources.loadShader("blur", "./assets/shaders/fullscreen.vert", "./assets/shaders/blur.frag");
-    auto postProcessShader     = resources.loadShader("postprocess", "./assets/shaders/fullscreen.vert", "./assets/shaders/postprocess.frag");
-    auto fxaaShader            = resources.loadShader("fxaa", "./assets/shaders/fullscreen.vert", "./assets/shaders/fxaa.frag");
+    auto defaultShader          = resources.loadShader("default", "./assets/shaders/shader.vert", "./assets/shaders/shader.frag");
+    auto defaultInstShader      = resources.loadShader("default_instanced", "./assets/shaders/shader_instanced.vert", "./assets/shaders/shader.frag");
+    auto unlitShader            = resources.loadShader("unlit", "./assets/shaders/unlit.vert", "./assets/shaders/unlit.frag");
+    auto skyboxShader           = resources.loadShader("skybox", "./assets/shaders/skybox.vert", "./assets/shaders/skybox.frag");
+    auto shadowShader           = resources.loadShader("shadow", "./assets/shaders/shadow.vert", "./assets/shaders/shadow.frag");
+    auto shadowInstancedShader  = resources.loadShader("shadow_instanced", "./assets/shaders/shadow_instanced.vert", "./assets/shaders/shadow.frag");
+    auto gBufferShader          = resources.loadShader("gbuffer", "./assets/shaders/gbuffer.vert", "./assets/shaders/gbuffer.frag");
+    auto gBufferInstancedShader = resources.loadShader("gbuffer_instanced", "./assets/shaders/gbuffer_instanced.vert", "./assets/shaders/gbuffer.frag");
+    auto ssaoShader             = resources.loadShader("ssao", "./assets/shaders/fullscreen.vert", "./assets/shaders/ssao.frag");
+    auto ssaoBlurShader         = resources.loadShader("ssao_blur", "./assets/shaders/fullscreen.vert", "./assets/shaders/ssao_blur.frag");
+    auto blurShader             = resources.loadShader("blur", "./assets/shaders/fullscreen.vert", "./assets/shaders/blur.frag");
+    auto postProcessShader      = resources.loadShader("postprocess", "./assets/shaders/fullscreen.vert", "./assets/shaders/postprocess.frag");
+    auto fxaaShader             = resources.loadShader("fxaa", "./assets/shaders/fullscreen.vert", "./assets/shaders/fxaa.frag");
 
     renderer.setSkybox(cubeMesh, skyboxShader);
     renderer.setShadowShader(shadowShader, shadowInstancedShader);
+    renderer.setSSAOShaders(gBufferShader, gBufferInstancedShader, ssaoShader, ssaoBlurShader);
     renderer.setPostProcessShaders(blurShader, postProcessShader, fxaaShader);
     renderer.setExposure(1.0f);
     renderer.setBloomStrength(0.45f);
@@ -69,9 +74,20 @@ void SandboxApp::onInit()
     DirectionalLight sun;
     sun.direction = {-0.45f, -0.65f, 0.6f};
     sun.color     = {1.0f, 0.95f, 0.88f};
-    sun.intensity = 3.2f;
+    sun.intensity = 2.6f;
     sun.enabled   = true;
     scene.setDirectionalLight(sun);
+
+    SpotLight flashlight;
+    flashlight.position    = camera.getPos();
+    flashlight.direction   = camera.getFront();
+    flashlight.color       = {1.0f, 0.95f, 0.85f};
+    flashlight.intensity   = 65.0f;
+    flashlight.radius      = 35.0f;
+    flashlight.innerCutOff = cosf(12.0f * 0.0174532925f);
+    flashlight.outerCutOff = cosf(22.0f * 0.0174532925f);
+    flashlight.enabled     = flashlightEnabled;
+    scene.setSpotLight(flashlight);
 
     auto cubeTex    = resources.loadTexture("cube_diffuse", "./assets/textures/i1.bmp");
     auto modelTex   = resources.loadTexture("model_diffuse", "./assets/textures/tex.tga");
@@ -121,23 +137,50 @@ void SandboxApp::onInit()
     missingTexMat.roughness = 0.4f;
     missingTexMat.albedoMap = missingTex;
 
-    Material glassCyan;
-    glassCyan.albedo      = {0.15f, 0.78f, 0.95f};
-    glassCyan.metallic    = 0.05f;
-    glassCyan.roughness   = 0.06f;
-    glassCyan.opacity     = 0.35f;
-    glassCyan.transparent = true;
-    glassCyan.doubleSided = true;
+    Material glassRippled;
+    glassRippled.albedo              = {0.82f, 0.96f, 1.0f};
+    glassRippled.metallic            = 0.0f;
+    glassRippled.roughness           = 0.06f;
+    glassRippled.opacity             = 1.0f;
+    glassRippled.transmission        = 0.96f;
+    glassRippled.ior                 = 1.52f;
+    glassRippled.refractionStrength  = 0.45f;
+    glassRippled.chromaticAberration = 0.14f;
+    glassRippled.transparent         = true;
+    glassRippled.doubleSided         = true;
+    glassRippled.normalMap           = normalMap;
 
-    Material glassAmber = glassCyan;
-    glassAmber.albedo = {0.95f, 0.55f, 0.12f};
+    Material glassFrosted;
+    glassFrosted.albedo              = {0.94f, 0.97f, 1.0f};
+    glassFrosted.metallic            = 0.0f;
+    glassFrosted.roughness           = 0.38f;
+    glassFrosted.opacity             = 1.0f;
+    glassFrosted.transmission        = 0.95f;
+    glassFrosted.ior                 = 1.48f;
+    glassFrosted.refractionStrength  = 0.30f;
+    glassFrosted.chromaticAberration = 0.06f;
+    glassFrosted.transparent         = true;
+    glassFrosted.doubleSided         = true;
 
-    Material glassMagenta = glassCyan;
-    glassMagenta.albedo = {0.95f, 0.18f, 0.72f};
+    Material glassAlphaBlend;
+    glassAlphaBlend.albedo      = {0.95f, 0.22f, 0.68f};
+    glassAlphaBlend.metallic    = 0.05f;
+    glassAlphaBlend.roughness   = 0.08f;
+    glassAlphaBlend.opacity     = 0.36f;
+    glassAlphaBlend.transparent = true;
+    glassAlphaBlend.doubleSided = true;
 
-    Material glassSphereMat = glassCyan;
-    glassSphereMat.opacity     = 0.38f;
-    glassSphereMat.doubleSided = false;
+    Material crystalSphereMat;
+    crystalSphereMat.albedo              = {0.92f, 0.97f, 1.0f};
+    crystalSphereMat.metallic            = 0.0f;
+    crystalSphereMat.roughness           = 0.02f;
+    crystalSphereMat.opacity             = 1.0f;
+    crystalSphereMat.transmission        = 0.98f;
+    crystalSphereMat.ior                 = 1.55f;
+    crystalSphereMat.refractionStrength  = 0.75f;
+    crystalSphereMat.chromaticAberration = 0.18f;
+    crystalSphereMat.transparent         = true;
+    crystalSphereMat.doubleSided         = false;
 
     Entity& floor = scene.createEntity("floor", planeMesh, defaultShader, texturedStone);
     floor.getTransform().setPosition({0.0f, -3.5f, -4.0f});
@@ -146,45 +189,45 @@ void SandboxApp::onInit()
     sphereEntity->getTransform().setPosition({0.0f, 1.6f, -2.0f});
 
     Entity& testMatte = scene.createEntity("test_matte", smallSphere, defaultShader, matteRed);
-    testMatte.getTransform().setPosition({-3.2f, -2.5f, -1.5f});
+    testMatte.getTransform().setPosition({-3.2f, -3.05f, -1.5f});
 
     Entity& testGlossy = scene.createEntity("test_glossy", smallSphere, defaultShader, glossyBlue);
-    testGlossy.getTransform().setPosition({-1.9f, -2.5f, -1.5f});
+    testGlossy.getTransform().setPosition({-1.9f, -3.05f, -1.5f});
 
     if (pyramidMesh)
     {
         pyramidEntity = &scene.createEntity("pyramid", pyramidMesh, defaultShader, pyramidMat);
-        pyramidEntity->getTransform().setPosition({-0.6f, -2.95f, -1.5f});
+        pyramidEntity->getTransform().setPosition({-0.6f, -3.5f, -1.5f});
     }
 
     Entity& testGold = scene.createEntity("test_gold", smallSphere, defaultShader, polishedGold);
-    testGold.getTransform().setPosition({0.7f, -2.5f, -1.5f});
+    testGold.getTransform().setPosition({0.7f, -3.05f, -1.5f});
 
     Entity& testChrome = scene.createEntity("test_chrome", smallSphere, defaultShader, brushedChrome);
-    testChrome.getTransform().setPosition({2.0f, -2.5f, -1.5f});
+    testChrome.getTransform().setPosition({2.0f, -3.05f, -1.5f});
 
     Entity& testMissing = scene.createEntity("test_missing_tex", smallSphere, defaultShader, missingTexMat);
-    testMissing.getTransform().setPosition({3.3f, -2.5f, -1.5f});
+    testMissing.getTransform().setPosition({3.3f, -3.05f, -1.5f});
 
     Quat upright = Quat::fromAxisAngle({1.0f, 0.0f, 0.0f}, 1.5707963f);
 
-    Entity& glass1 = scene.createEntity("glass_cyan", glassMesh, defaultShader, glassCyan);
-    glass1.getTransform().setPosition({-0.6f, -2.2f, 0.2f});
+    Entity& glass1 = scene.createEntity("glass_rippled", glassMesh, defaultShader, glassRippled);
+    glass1.getTransform().setPosition({-2.2f, -2.55f, 0.35f});
     glass1.getTransform().setRotation(upright);
     glass1.setCastsShadows(false);
 
-    Entity& glass2 = scene.createEntity("glass_amber", glassMesh, defaultShader, glassAmber);
-    glass2.getTransform().setPosition({0.0f, -2.2f, 0.8f});
+    Entity& glass2 = scene.createEntity("glass_frosted", glassMesh, defaultShader, glassFrosted);
+    glass2.getTransform().setPosition({0.0f, -2.55f, 0.35f});
     glass2.getTransform().setRotation(upright);
     glass2.setCastsShadows(false);
 
-    Entity& glass3 = scene.createEntity("glass_magenta", glassMesh, defaultShader, glassMagenta);
-    glass3.getTransform().setPosition({0.6f, -2.2f, 1.4f});
+    Entity& glass3 = scene.createEntity("glass_alpha", glassMesh, defaultShader, glassAlphaBlend);
+    glass3.getTransform().setPosition({2.2f, -2.55f, 0.35f});
     glass3.getTransform().setRotation(upright);
     glass3.setCastsShadows(false);
 
-    Entity& glassSphere = scene.createEntity("glass_sphere", sphereMesh, defaultShader, glassSphereMat);
-    glassSphere.getTransform().setPosition({-2.5f, 0.2f, -2.5f});
+    Entity& glassSphere = scene.createEntity("glass_sphere", sphereMesh, defaultShader, crystalSphereMat);
+    glassSphere.getTransform().setPosition({-2.2f, 0.25f, -1.2f});
     glassSphere.setCastsShadows(false);
 
     Vec3 cubePositions[5] = {
@@ -314,6 +357,26 @@ void SandboxApp::updateInstancedOrbit(InstancedBatch* batch, const std::vector<O
 void SandboxApp::onUpdate(float dt)
 {
     (void)dt;
+
+    if (window.isFocused())
+    {
+        bool fDown = window.getKeys()['F'];
+        if (fDown && !wasFDown)
+        {
+            flashlightEnabled = !flashlightEnabled;
+        }
+        wasFDown = fDown;
+    }
+    else
+    {
+        wasFDown = false;
+    }
+
+    SpotLight& spot = scene.getSpotLight();
+    Vec3 camPos = camera.getPos();
+    spot.position  = { camPos.x, camPos.y - 0.12f, camPos.z };
+    spot.direction = camera.getFront();
+    spot.enabled   = flashlightEnabled;
 
     if (sphereEntity)
     {

@@ -24,6 +24,7 @@ class Scene
     std::vector<std::unique_ptr<InstancedBatch>> instancedBatches;
     std::vector<PointLight> pointLights;
     DirectionalLight directionalLight;
+    SpotLight spotLight;
 public:
     Scene() = default;
     ~Scene() = default;
@@ -44,6 +45,10 @@ public:
     void setDirectionalLight(const DirectionalLight& light);
     DirectionalLight& getDirectionalLight() { return directionalLight; }
     const DirectionalLight& getDirectionalLight() const { return directionalLight; }
+
+    void setSpotLight(const SpotLight& light);
+    SpotLight& getSpotLight() { return spotLight; }
+    const SpotLight& getSpotLight() const { return spotLight; }
 
     void submit(Renderer& renderer) const;
     void clear();

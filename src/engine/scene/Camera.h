@@ -21,6 +21,7 @@ public:
     float getLastX() const { return lastX; }
     float getLastY() const { return lastY; }
     Vec3 getPos() const { return pos; }
+    Vec3 getFront() const { return front; }
     // Setters
     void setLastX(const float& inLastX) { lastX = inLastX; }
     void setLastY(const float& inLastY) { lastY = inLastY; }

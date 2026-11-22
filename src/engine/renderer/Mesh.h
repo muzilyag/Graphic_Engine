@@ -36,6 +36,7 @@ public:
 
     const AABB& getBounds() const { return bounds; }
     void draw() const;
+    void drawInstanced(const Mat4* matrices, size_t count);
     void drawInstanced(const std::vector<Mat4>& matrices);
 };
 #endif

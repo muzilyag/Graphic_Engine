@@ -11,9 +11,18 @@ void Renderer::init(const ResourceManager& resources)
     defaultWhite   = resources.getDefaultWhiteTexture();
     defaultNormal  = resources.getDefaultNormalTexture();
     shadowFBO      = std::make_unique<Framebuffer>(2048, 2048, FramebufferType::DEPTH_ONLY);
+
+    int halfW = std::max(1, viewportWidth / 2);
+    int halfH = std::max(1, viewportHeight / 2);
+
+    gBufferFBO     = std::make_unique<Framebuffer>(halfW, halfH, FramebufferType::GBUFFER);
+    ssaoFBO        = std::make_unique<Framebuffer>(halfW, halfH, FramebufferType::LDR_COLOR);
+    ssaoBlurFBO    = std::make_unique<Framebuffer>(halfW, halfH, FramebufferType::LDR_COLOR);
+
     hdrFBO         = std::make_unique<Framebuffer>(viewportWidth, viewportHeight, FramebufferType::HDR_MRT);
-    pingPongFBO[0] = std::make_unique<Framebuffer>(std::max(1, viewportWidth / 2), std::max(1, viewportHeight / 2), FramebufferType::HDR_COLOR);
-    pingPongFBO[1] = std::make_unique<Framebuffer>(std::max(1, viewportWidth / 2), std::max(1, viewportHeight / 2), FramebufferType::HDR_COLOR);
+    refractionFBO  = std::make_unique<Framebuffer>(viewportWidth, viewportHeight, FramebufferType::HDR_COLOR_MIPMAP);
+    pingPongFBO[0] = std::make_unique<Framebuffer>(halfW, halfH, FramebufferType::HDR_COLOR);
+    pingPongFBO[1] = std::make_unique<Framebuffer>(halfW, halfH, FramebufferType::HDR_COLOR);
     ldrFBO         = std::make_unique<Framebuffer>(viewportWidth, viewportHeight, FramebufferType::LDR_COLOR);
     glGenVertexArrays(1, &screenVAO);
 }
@@ -24,6 +33,7 @@ void Renderer::shutdown()
     transparentQueue.clear();
     shadowQueue.clear();
     instancedQueue.clear();
+    visibleInstancePool.clear();
     instanceScratch.clear();
     lights.clear();
     if (screenVAO != 0)
@@ -34,7 +44,15 @@ void Renderer::shutdown()
     shadowFBO.reset();
     shadowShader.reset();
     shadowInstancedShader.reset();
+    gBufferFBO.reset();
+    ssaoFBO.reset();
+    ssaoBlurFBO.reset();
+    gBufferShader.reset();
+    gBufferInstancedShader.reset();
+    ssaoShader.reset();
+    ssaoBlurShader.reset();
     hdrFBO.reset();
+    refractionFBO.reset();
     pingPongFBO[0].reset();
     pingPongFBO[1].reset();
     ldrFBO.reset();
@@ -57,6 +75,14 @@ void Renderer::setShadowShader(std::shared_ptr<Shader> shader, std::shared_ptr<S
 {
     shadowShader = std::move(shader);
     shadowInstancedShader = std::move(instancedShader);
+}
+
+void Renderer::setSSAOShaders(std::shared_ptr<Shader> gBuf, std::shared_ptr<Shader> gBufInstanced, std::shared_ptr<Shader> ssao, std::shared_ptr<Shader> ssaoBlur)
+{
+    gBufferShader = std::move(gBuf);
+    gBufferInstancedShader = std::move(gBufInstanced);
+    ssaoShader = std::move(ssao);
+    ssaoBlurShader = std::move(ssaoBlur);
 }
 
 void Renderer::setPostProcessShaders(std::shared_ptr<Shader> blur, std::shared_ptr<Shader> postProcess, std::shared_ptr<Shader> fxaa)
@@ -92,12 +118,28 @@ void Renderer::beginFrame(const Mat4& view, const Mat4& projection, const Vec3& 
     {
         hdrFBO->resize(width, height);
     }
+    if (refractionFBO && (refractionFBO->getWidth() != width || refractionFBO->getHeight() != height))
+    {
+        refractionFBO->resize(width, height);
+    }
     if (ldrFBO && (ldrFBO->getWidth() != width || ldrFBO->getHeight() != height))
     {
         ldrFBO->resize(width, height);
     }
     int halfW = std::max(1, width / 2);
     int halfH = std::max(1, height / 2);
+    if (gBufferFBO && (gBufferFBO->getWidth() != halfW || gBufferFBO->getHeight() != halfH))
+    {
+        gBufferFBO->resize(halfW, halfH);
+    }
+    if (ssaoFBO && (ssaoFBO->getWidth() != halfW || ssaoFBO->getHeight() != halfH))
+    {
+        ssaoFBO->resize(halfW, halfH);
+    }
+    if (ssaoBlurFBO && (ssaoBlurFBO->getWidth() != halfW || ssaoBlurFBO->getHeight() != halfH))
+    {
+        ssaoBlurFBO->resize(halfW, halfH);
+    }
     if (pingPongFBO[0] && (pingPongFBO[0]->getWidth() != halfW || pingPongFBO[0]->getHeight() != halfH))
     {
         pingPongFBO[0]->resize(halfW, halfH);
@@ -112,8 +154,10 @@ void Renderer::beginFrame(const Mat4& view, const Mat4& projection, const Vec3& 
     transparentQueue.clear();
     shadowQueue.clear();
     instancedQueue.clear();
+    visibleInstancePool.clear();
     lights.clear();
     dirLight = DirectionalLight{};
+    spotLight = SpotLight{};
 }
 
 void Renderer::submitDirectionalLight(const DirectionalLight& light)
@@ -126,6 +170,19 @@ void Renderer::submitDirectionalLight(const DirectionalLight& light)
         {
             dirLight.direction = normDir;
             sunDirection = normDir * -1.0f;
+        }
+    }
+}
+
+void Renderer::submitSpotLight(const SpotLight& light)
+{
+    spotLight = light;
+    if (spotLight.enabled)
+    {
+        Vec3 normDir = Vec3::normalize(spotLight.direction);
+        if (Vec3::dot(normDir, normDir) > 1e-6f)
+        {
+            spotLight.direction = normDir;
         }
     }
 }
@@ -144,7 +201,7 @@ void Renderer::submit(const Mesh* mesh, Shader* shader, const Material* material
 
     ++stats.totalObjects;
     AABB worldBounds = mesh->getBounds().transformed(modelMatrix);
-    bool isTransparent = material->transparent || material->opacity < 0.999f;
+    bool isTransparent = material->transparent || material->opacity < 0.999f || material->transmission > 0.001f;
 
     if (!isTransparent && castsShadows)
     {
@@ -180,10 +237,42 @@ void Renderer::submitInstanced(Mesh* mesh, Shader* shader, const Material* mater
     }
 
     stats.totalObjects += static_cast<int>(transforms->size());
-    instancedQueue.push_back({ mesh, shader, material, transforms, castsShadows });
+
+    InstancedRenderCommand cmd;
+    cmd.mesh = mesh;
+    cmd.shader = shader;
+    cmd.material = material;
+    cmd.transforms = transforms;
+    cmd.castsShadows = castsShadows;
+
+    if (frustumCullingEnabled)
+    {
+        cmd.useVisiblePool = true;
+        cmd.visibleOffset = visibleInstancePool.size();
+        const AABB& localBounds = mesh->getBounds();
+        for (const Mat4& mat : *transforms)
+        {
+            if (cameraFrustum.intersects(localBounds.transformed(mat)))
+            {
+                visibleInstancePool.push_back(mat);
+            }
+        }
+        cmd.visibleCount = visibleInstancePool.size() - cmd.visibleOffset;
+        stats.visibleObjects += static_cast<int>(cmd.visibleCount);
+        stats.culledObjects += static_cast<int>(transforms->size() - cmd.visibleCount);
+    }
+    else
+    {
+        cmd.useVisiblePool = false;
+        cmd.visibleOffset = 0;
+        cmd.visibleCount = transforms->size();
+        stats.visibleObjects += static_cast<int>(transforms->size());
+    }
+
+    instancedQueue.push_back(cmd);
 }
 
-void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix, bool& hasAlbedoMap, bool& hasNormalMap, bool& hasMetallicMap, bool& hasRoughnessMap, bool& hasAoMap)
+void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive, bool& hasAlbedoMap, bool& hasNormalMap, bool& hasMetallicMap, bool& hasRoughnessMap, bool& hasAoMap)
 {
     constexpr int MAX_POINT_LIGHTS = 8;
 
@@ -208,6 +297,10 @@ void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix,
     if (shader->hasUniform("lightSpaceMatrix"))
     {
         shader->setMat4("lightSpaceMatrix", lightSpaceMatrix);
+    }
+    if (shader->hasUniform("screenSize"))
+    {
+        shader->setVec2("screenSize", static_cast<float>(viewportWidth), static_cast<float>(viewportHeight));
     }
 
     hasAlbedoMap    = shader->hasUniform("material.albedoMap");
@@ -244,6 +337,38 @@ void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix,
         }
         shader->setInt("shadowMap", 5);
     }
+    if (shader->hasUniform("ssaoMap"))
+    {
+        if (ssaoActive && ssaoBlurFBO && ssaoBlurFBO->isValid())
+        {
+            ssaoBlurFBO->bindColorTexture(0, 6);
+        }
+        else if (defaultWhite)
+        {
+            defaultWhite->bind(6);
+        }
+        shader->setInt("ssaoMap", 6);
+    }
+    if (shader->hasUniform("useSSAO"))
+    {
+        shader->setInt("useSSAO", ssaoActive ? 1 : 0);
+    }
+    if (shader->hasUniform("sceneColorMap"))
+    {
+        if (refractionActive && refractionFBO && refractionFBO->isValid())
+        {
+            refractionFBO->bindColorTexture(0, 7);
+        }
+        else if (defaultWhite)
+        {
+            defaultWhite->bind(7);
+        }
+        shader->setInt("sceneColorMap", 7);
+    }
+    if (shader->hasUniform("useRefraction"))
+    {
+        shader->setInt("useRefraction", refractionActive ? 1 : 0);
+    }
 
     if (shader->hasUniform("hasDirLight"))
     {
@@ -253,6 +378,21 @@ void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix,
             shader->setVec3("dirLight.direction", dirLight.direction);
             shader->setVec3("dirLight.color", dirLight.color);
             shader->setFloat("dirLight.intensity", dirLight.intensity);
+        }
+    }
+
+    if (shader->hasUniform("hasSpotLight"))
+    {
+        shader->setInt("hasSpotLight", spotLight.enabled ? 1 : 0);
+        if (spotLight.enabled)
+        {
+            shader->setVec3("spotLight.position", spotLight.position);
+            shader->setVec3("spotLight.direction", spotLight.direction);
+            shader->setVec3("spotLight.color", spotLight.color);
+            shader->setFloat("spotLight.intensity", spotLight.intensity);
+            shader->setFloat("spotLight.radius", spotLight.radius);
+            shader->setFloat("spotLight.innerCutOff", spotLight.innerCutOff);
+            shader->setFloat("spotLight.outerCutOff", spotLight.outerCutOff);
         }
     }
 
@@ -317,7 +457,7 @@ void Renderer::bindMaterialTextures(const Material& mat, bool hasAlbedoMap, bool
     }
 }
 
-void Renderer::drawCommandList(const std::vector<RenderCommand>& list, const Mat4& lightSpaceMatrix)
+void Renderer::drawCommandList(const std::vector<RenderCommand>& list, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive)
 {
     Shader* activeShader = nullptr;
     bool hasAlbedoMap = false;
@@ -332,7 +472,7 @@ void Renderer::drawCommandList(const std::vector<RenderCommand>& list, const Mat
         if (cmd.shader != activeShader)
         {
             activeShader = cmd.shader;
-            bindShaderFrameData(activeShader, lightSpaceMatrix, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
+            bindShaderFrameData(activeShader, lightSpaceMatrix, ssaoActive, refractionActive, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
         }
 
         const Material& mat = *cmd.material;
@@ -363,7 +503,7 @@ void Renderer::drawCommandList(const std::vector<RenderCommand>& list, const Mat
     }
 }
 
-void Renderer::drawInstancedList(const Mat4& lightSpaceMatrix)
+void Renderer::drawInstancedList(const Mat4& lightSpaceMatrix, bool ssaoActive)
 {
     if (instancedQueue.empty())
     {
@@ -386,39 +526,19 @@ void Renderer::drawInstancedList(const Mat4& lightSpaceMatrix)
 
     for (const InstancedRenderCommand& batch : instancedQueue)
     {
-        const std::vector<Mat4>* drawTransforms = batch.transforms;
-
-        if (frustumCullingEnabled)
+        if (batch.visibleCount == 0)
         {
-            instanceScratch.clear();
-            const AABB& localBounds = batch.mesh->getBounds();
-            for (const Mat4& mat : *batch.transforms)
-            {
-                if (cameraFrustum.intersects(localBounds.transformed(mat)))
-                {
-                    instanceScratch.push_back(mat);
-                }
-            }
-
-            int visibleCount = static_cast<int>(instanceScratch.size());
-            stats.visibleObjects += visibleCount;
-            stats.culledObjects += static_cast<int>(batch.transforms->size()) - visibleCount;
-
-            if (visibleCount == 0)
-            {
-                continue;
-            }
-            drawTransforms = &instanceScratch;
+            continue;
         }
-        else
-        {
-            stats.visibleObjects += static_cast<int>(batch.transforms->size());
-        }
+
+        const Mat4* drawData = batch.useVisiblePool
+            ? (visibleInstancePool.data() + batch.visibleOffset)
+            : batch.transforms->data();
 
         if (batch.shader != activeShader)
         {
             activeShader = batch.shader;
-            bindShaderFrameData(activeShader, lightSpaceMatrix, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
+            bindShaderFrameData(activeShader, lightSpaceMatrix, ssaoActive, false, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
         }
 
         const Material& mat = *batch.material;
@@ -438,7 +558,7 @@ void Renderer::drawInstancedList(const Mat4& lightSpaceMatrix)
 
         bindMaterialTextures(mat, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
         activeShader->setMaterial("material", mat);
-        batch.mesh->drawInstanced(*drawTransforms);
+        batch.mesh->drawInstanced(drawData, batch.visibleCount);
         ++stats.drawCalls;
     }
 
@@ -522,6 +642,95 @@ void Renderer::flush()
         shadowFBO->unbind();
     }
 
+    bool useSSAO = ssaoEnabled && !wireframe && screenVAO != 0
+                && gBufferFBO && gBufferFBO->isValid()
+                && ssaoFBO && ssaoFBO->isValid()
+                && ssaoBlurFBO && ssaoBlurFBO->isValid()
+                && gBufferShader != nullptr
+                && ssaoShader != nullptr
+                && ssaoBlurShader != nullptr;
+
+    if (useSSAO)
+    {
+        gBufferFBO->bind();
+        glViewport(0, 0, gBufferFBO->getWidth(), gBufferFBO->getHeight());
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDisable(GL_BLEND);
+        glDepthMask(GL_TRUE);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+
+        gBufferShader->use();
+        gBufferShader->setMat4("view", viewMatrix);
+        gBufferShader->setMat4("projection", projectionMatrix);
+
+        for (const RenderCommand& cmd : opaqueQueue)
+        {
+            if (!cmd.castsShadows)
+            {
+                continue;
+            }
+            gBufferShader->setMat4("model", cmd.modelMatrix);
+            cmd.mesh->draw();
+            ++stats.drawCalls;
+        }
+
+        if (gBufferInstancedShader && !instancedQueue.empty())
+        {
+            gBufferInstancedShader->use();
+            gBufferInstancedShader->setMat4("view", viewMatrix);
+            gBufferInstancedShader->setMat4("projection", projectionMatrix);
+
+            for (const InstancedRenderCommand& batch : instancedQueue)
+            {
+                if (batch.visibleCount == 0)
+                {
+                    continue;
+                }
+                const Mat4* drawData = batch.useVisiblePool
+                    ? (visibleInstancePool.data() + batch.visibleOffset)
+                    : batch.transforms->data();
+                batch.mesh->drawInstanced(drawData, batch.visibleCount);
+                ++stats.drawCalls;
+            }
+        }
+
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        glBindVertexArray(screenVAO);
+
+        ssaoFBO->bind();
+        glViewport(0, 0, ssaoFBO->getWidth(), ssaoFBO->getHeight());
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        ssaoShader->use();
+        gBufferFBO->bindColorTexture(0, 0);
+        gBufferFBO->bindColorTexture(1, 1);
+        ssaoShader->setInt("gPosition", 0);
+        ssaoShader->setInt("gNormal", 1);
+        ssaoShader->setMat4("projection", projectionMatrix);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        ssaoBlurFBO->bind();
+        glViewport(0, 0, ssaoBlurFBO->getWidth(), ssaoBlurFBO->getHeight());
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        ssaoBlurShader->use();
+        ssaoFBO->bindColorTexture(0, 0);
+        gBufferFBO->bindColorTexture(0, 1);
+        ssaoBlurShader->setInt("ssaoInput", 0);
+        ssaoBlurShader->setInt("gPosition", 1);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        glBindVertexArray(0);
+        glEnable(GL_CULL_FACE);
+        glEnable(GL_DEPTH_TEST);
+        ssaoBlurFBO->unbind();
+    }
+
     bool useHDR = hdrFBO && hdrFBO->isValid() && postProcessShader != nullptr && screenVAO != 0;
     if (useHDR)
     {
@@ -547,8 +756,8 @@ void Renderer::flush()
     glDepthMask(GL_TRUE);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    drawCommandList(opaqueQueue, lightSpaceMatrix);
-    drawInstancedList(lightSpaceMatrix);
+    drawCommandList(opaqueQueue, lightSpaceMatrix, useSSAO, false);
+    drawInstancedList(lightSpaceMatrix, useSSAO);
 
     if (skyboxMesh && skyboxShader)
     {
@@ -574,6 +783,27 @@ void Renderer::flush()
 
     if (!transparentQueue.empty())
     {
+        bool doRefraction = false;
+        if (useHDR && refractionEnabled && !wireframe && refractionFBO && refractionFBO->isValid() && glBlitFramebuffer)
+        {
+            for (const RenderCommand& cmd : transparentQueue)
+            {
+                if (cmd.material && cmd.material->transmission > 0.001f)
+                {
+                    doRefraction = true;
+                    break;
+                }
+            }
+        }
+
+        if (doRefraction)
+        {
+            hdrFBO->blitColorTo(*refractionFBO, 0);
+            refractionFBO->generateColorMipmaps(0);
+            hdrFBO->bind();
+            glViewport(0, 0, viewportWidth, viewportHeight);
+        }
+
         std::sort(transparentQueue.begin(), transparentQueue.end(),
             [](const RenderCommand& a, const RenderCommand& b)
             {
@@ -584,7 +814,7 @@ void Renderer::flush()
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
 
-        drawCommandList(transparentQueue, lightSpaceMatrix);
+        drawCommandList(transparentQueue, lightSpaceMatrix, false, doRefraction);
 
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
@@ -688,5 +918,6 @@ void Renderer::flush()
     transparentQueue.clear();
     shadowQueue.clear();
     instancedQueue.clear();
+    visibleInstancePool.clear();
     lights.clear();
 }

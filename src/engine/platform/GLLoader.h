@@ -29,6 +29,8 @@
 #define GL_COMPILE_STATUS                      0x8B81
 #define GL_LINK_STATUS                         0x8B82
 #define GL_FRAMEBUFFER                         0x8D40
+#define GL_READ_FRAMEBUFFER                    0x8CA8
+#define GL_DRAW_FRAMEBUFFER                    0x8CA9
 #define GL_RENDERBUFFER                        0x8D41
 #define GL_COLOR_ATTACHMENT0                   0x8CE0
 #define GL_COLOR_ATTACHMENT1                   0x8CE1
@@ -83,6 +85,7 @@ typedef void (WINAPI * PFNGLGENERATEMIPMAPPROC) (GLenum target);
 typedef void (WINAPI * PFNGLGENFRAMEBUFFERSPROC) (int n, UINT* framebuffers);
 typedef void (WINAPI * PFNGLDELETEFRAMEBUFFERSPROC) (int n, const UINT* framebuffers);
 typedef void (WINAPI * PFNGLBINDFRAMEBUFFERPROC) (GLenum target, UINT framebuffer);
+typedef void (WINAPI * PFNGLBLITFRAMEBUFFERPROC) (int srcX0, int srcY0, int srcX1, int srcY1, int dstX0, int dstY0, int dstX1, int dstY1, GLbitfield mask, GLenum filter);
 typedef void (WINAPI * PFNGLFRAMEBUFFERTEXTURE2DPROC) (GLenum target, GLenum attachment, GLenum textarget, UINT texture, int level);
 typedef GLenum (WINAPI * PFNGLCHECKFRAMEBUFFERSTATUSPROC) (GLenum target);
 typedef void (WINAPI * PFNGLGENRENDERBUFFERSPROC) (int n, UINT* renderbuffers);
@@ -135,6 +138,7 @@ extern PFNGLGENERATEMIPMAPPROC glGenerateMipmap;
 extern PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers;
 extern PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers;
 extern PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer;
+extern PFNGLBLITFRAMEBUFFERPROC glBlitFramebuffer;
 extern PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D;
 extern PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus;
 extern PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers;

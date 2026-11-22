@@ -7,7 +7,9 @@ enum class FramebufferType
     DEPTH_ONLY,
     LDR_COLOR,
     HDR_COLOR,
-    HDR_MRT
+    HDR_COLOR_MIPMAP,
+    HDR_MRT,
+    GBUFFER
 };
 
 class Framebuffer
@@ -36,6 +38,8 @@ public:
     void unbind() const;
     void bindColorTexture(unsigned int attachmentIndex, unsigned int unit) const;
     void bindDepthTexture(unsigned int unit) const;
+    void blitColorTo(const Framebuffer& dst, unsigned int srcAttachment = 0) const;
+    void generateColorMipmaps(unsigned int attachmentIndex = 0) const;
 
     int getWidth() const { return width; }
     int getHeight() const { return height; }

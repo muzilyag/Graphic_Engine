@@ -13,6 +13,10 @@ struct Material
     Vec3 emissive{0.0f, 0.0f, 0.0f};
     float opacity = 1.0f;
     float alphaCutoff = 0.0f;
+    float transmission = 0.0f;
+    float ior = 1.5f;
+    float refractionStrength = 0.35f;
+    float chromaticAberration = 0.12f;
     bool transparent = false;
     bool doubleSided = false;
 
@@ -36,6 +40,18 @@ struct DirectionalLight
     Vec3 direction{-0.45f, -0.65f, 0.6f};
     Vec3 color{1.0f, 0.95f, 0.88f};
     float intensity = 3.0f;
+    bool enabled = false;
+};
+
+struct SpotLight
+{
+    Vec3 position{0.0f, 0.0f, 0.0f};
+    Vec3 direction{0.0f, 0.0f, -1.0f};
+    Vec3 color{1.0f, 0.96f, 0.88f};
+    float intensity = 55.0f;
+    float radius = 32.0f;
+    float innerCutOff = 0.9659f;
+    float outerCutOff = 0.9063f;
     bool enabled = false;
 };
 #endif

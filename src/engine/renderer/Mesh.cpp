@@ -160,9 +160,9 @@ void Mesh::draw() const
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
 }
 
-void Mesh::drawInstanced(const std::vector<Mat4>& matrices)
+void Mesh::drawInstanced(const Mat4* matrices, size_t count)
 {
-    if (matrices.empty() || !glDrawElementsInstanced || !glVertexAttribDivisor)
+    if (!matrices || count == 0 || !glDrawElementsInstanced || !glVertexAttribDivisor)
     {
         return;
     }
@@ -177,20 +177,19 @@ void Mesh::drawInstanced(const std::vector<Mat4>& matrices)
 
     glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
 
-    size_t requiredCount = matrices.size();
-    ptrdiff_t byteSize = static_cast<ptrdiff_t>(requiredCount * sizeof(Mat4));
-    if (requiredCount > instanceCapacity)
+    ptrdiff_t byteSize = static_cast<ptrdiff_t>(count * sizeof(Mat4));
+    if (count > instanceCapacity)
     {
-        glBufferData(GL_ARRAY_BUFFER, byteSize, matrices.data(), GL_DYNAMIC_DRAW);
-        instanceCapacity = requiredCount;
+        glBufferData(GL_ARRAY_BUFFER, byteSize, matrices, GL_DYNAMIC_DRAW);
+        instanceCapacity = count;
     }
     else if (glBufferSubData)
     {
-        glBufferSubData(GL_ARRAY_BUFFER, 0, byteSize, matrices.data());
+        glBufferSubData(GL_ARRAY_BUFFER, 0, byteSize, matrices);
     }
     else
     {
-        glBufferData(GL_ARRAY_BUFFER, byteSize, matrices.data(), GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, byteSize, matrices, GL_DYNAMIC_DRAW);
     }
 
     if (firstInit)
@@ -207,7 +206,7 @@ void Mesh::drawInstanced(const std::vector<Mat4>& matrices)
         glEnableVertexAttribArray(5 + i);
     }
 
-    glDrawElementsInstanced(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0, static_cast<int>(requiredCount));
+    glDrawElementsInstanced(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0, static_cast<int>(count));
 
     if (glDisableVertexAttribArray)
     {
@@ -219,4 +218,9 @@ void Mesh::drawInstanced(const std::vector<Mat4>& matrices)
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
+}
+
+void Mesh::drawInstanced(const std::vector<Mat4>& matrices)
+{
+    drawInstanced(matrices.data(), matrices.size());
 }

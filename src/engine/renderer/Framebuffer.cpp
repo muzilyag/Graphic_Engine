@@ -48,9 +48,15 @@ void Framebuffer::create()
     }
     else
     {
-        int colorCount = (type == FramebufferType::HDR_MRT) ? 2 : 1;
+        int colorCount = (type == FramebufferType::HDR_MRT || type == FramebufferType::GBUFFER) ? 2 : 1;
         GLenum internalFormat = (type == FramebufferType::LDR_COLOR) ? GL_RGBA8 : GL_RGBA16F;
         GLenum pixelType = (type == FramebufferType::LDR_COLOR) ? GL_UNSIGNED_BYTE : GL_FLOAT;
+        GLenum magFilter = (type == FramebufferType::GBUFFER) ? GL_NEAREST : GL_LINEAR;
+        GLenum minFilter = magFilter;
+        if (type == FramebufferType::HDR_COLOR_MIPMAP && glGenerateMipmap)
+        {
+            minFilter = GL_LINEAR_MIPMAP_LINEAR;
+        }
 
         glGenTextures(colorCount, colorTextures);
 
@@ -59,10 +65,14 @@ void Framebuffer::create()
         {
             glBindTexture(GL_TEXTURE_2D, colorTextures[i]);
             glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, pixelType, nullptr);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            if (type == FramebufferType::HDR_COLOR_MIPMAP && glGenerateMipmap)
+            {
+                glGenerateMipmap(GL_TEXTURE_2D);
+            }
             glFramebufferTexture2D(GL_FRAMEBUFFER, attachments[i], GL_TEXTURE_2D, colorTextures[i], 0);
         }
 
@@ -71,7 +81,7 @@ void Framebuffer::create()
             glDrawBuffers(colorCount, attachments);
         }
 
-        if (type == FramebufferType::HDR_MRT)
+        if (type == FramebufferType::HDR_MRT || type == FramebufferType::GBUFFER)
         {
             if (glGenRenderbuffers && glBindRenderbuffer && glRenderbufferStorage && glFramebufferRenderbuffer)
             {
@@ -163,4 +173,34 @@ void Framebuffer::bindDepthTexture(unsigned int unit) const
 {
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_2D, depthTexture);
+}
+
+void Framebuffer::blitColorTo(const Framebuffer& dst, unsigned int srcAttachment) const
+{
+    if (!valid || !dst.valid || !glBlitFramebuffer || srcAttachment >= 2)
+    {
+        return;
+    }
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, FBO);
+    glReadBuffer(GL_COLOR_ATTACHMENT0 + srcAttachment);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dst.FBO);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+    GLenum filter = (width == dst.width && height == dst.height) ? GL_NEAREST : GL_LINEAR;
+    glBlitFramebuffer(0, 0, width, height, 0, 0, dst.width, dst.height, GL_COLOR_BUFFER_BIT, filter);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Framebuffer::generateColorMipmaps(unsigned int attachmentIndex) const
+{
+    if (!valid || attachmentIndex >= 2 || colorTextures[attachmentIndex] == 0 || !glGenerateMipmap)
+    {
+        return;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, colorTextures[attachmentIndex]);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }

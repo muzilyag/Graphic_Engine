@@ -56,9 +56,15 @@ void Scene::setDirectionalLight(const DirectionalLight& light)
     directionalLight = light;
 }
 
+void Scene::setSpotLight(const SpotLight& light)
+{
+    spotLight = light;
+}
+
 void Scene::submit(Renderer& renderer) const
 {
     renderer.submitDirectionalLight(directionalLight);
+    renderer.submitSpotLight(spotLight);
 
     for (const PointLight& light : pointLights)
     {
@@ -106,4 +112,5 @@ void Scene::clear()
     instancedBatches.clear();
     pointLights.clear();
     directionalLight = DirectionalLight{};
+    spotLight = SpotLight{};
 }

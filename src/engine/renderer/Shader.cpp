@@ -123,6 +123,15 @@ void Shader::setMat4(const std::string& name, const Mat4& mat)
     }
 }
 
+void Shader::setVec2(const std::string& name, float x, float y)
+{
+    int loc = getUniformLocation(name);
+    if (loc != -1)
+    {
+        glUniform2f(loc, x, y);
+    }
+}
+
 bool Shader::checkCompileErrors(unsigned int shader, const std::string& type) 
 {
     int success = 0;
@@ -219,5 +228,21 @@ void Shader::setMaterial(const std::string& name, const Material& mater)
     if (hasUniform(name + ".alphaCutoff"))
     {
         setFloat(name + ".alphaCutoff", mater.alphaCutoff);
+    }
+    if (hasUniform(name + ".transmission"))
+    {
+        setFloat(name + ".transmission", mater.transmission);
+    }
+    if (hasUniform(name + ".ior"))
+    {
+        setFloat(name + ".ior", mater.ior);
+    }
+    if (hasUniform(name + ".refractionStrength"))
+    {
+        setFloat(name + ".refractionStrength", mater.refractionStrength);
+    }
+    if (hasUniform(name + ".chromaticAberration"))
+    {
+        setFloat(name + ".chromaticAberration", mater.chromaticAberration);
     }
 }

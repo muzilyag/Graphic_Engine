@@ -82,6 +82,14 @@ void Application::updateWindowTitle(float dt)
         {
             oss << " [No Cull]";
         }
+        if (!renderer.isSSAOEnabled())
+        {
+            oss << " [No SSAO]";
+        }
+        if (!renderer.isRefractionEnabled())
+        {
+            oss << " [No Refract]";
+        }
         window.setTitle(oss.str());
 
         fpsAccumulator = 0.0f;
@@ -168,6 +176,20 @@ void Application::updateInput(float dt)
             renderer.setFrustumCullingEnabled(!renderer.isFrustumCullingEnabled());
         }
         wasF6Down = f6Down;
+
+        bool f7Down = keys[VK_F7];
+        if (f7Down && !wasF7Down)
+        {
+            renderer.setSSAOEnabled(!renderer.isSSAOEnabled());
+        }
+        wasF7Down = f7Down;
+
+        bool f8Down = keys[VK_F8];
+        if (f8Down && !wasF8Down)
+        {
+            renderer.setRefractionEnabled(!renderer.isRefractionEnabled());
+        }
+        wasF8Down = f8Down;
     }
     else
     {
@@ -176,6 +198,8 @@ void Application::updateInput(float dt)
         wasF3Down = false;
         wasF4Down = false;
         wasF6Down = false;
+        wasF7Down = false;
+        wasF8Down = false;
     }
 }
 
