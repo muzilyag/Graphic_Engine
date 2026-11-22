@@ -1,46 +1,49 @@
-#include "Texture.h"
-#include "GLLoader.h"
-#include <fstream>
+#include "engine/renderer/Texture.h"
+#include "engine/platform/GLLoader.h"
+#include "engine/resources/ImageLoader.h"
 
-Texture::Texture(std::string path) : logger("Texture")
+Texture::Texture(const std::string& path) : logger("Texture")
 {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) 
+    ImageData img = ImageLoader::load(path);
+    if (!img.isValid())
     {
-        logger.error("Not founded file: " + std::string(path));
         return;
     }
-    unsigned char head[54];
-    f.read((char*)head, 54);
-    int w = *(int*)&head[18];
-    int h = *(int*)&head[22];
-    int offset = *(int*)&head[10];
 
-    unsigned char* data = new unsigned char[w * h * 3];
-    f.seekg(offset, std::ios::beg);
-    int row = (w * 3 + 3) & ~3;
-    for (int i = 0; i < h; i++) 
-    {
-        f.read((char*)(data + (i * w * 3)), w * 3);
-        f.seekg(row - w * 3, std::ios::cur);
-    }
+    GLenum format = (img.channels == 4) ? GL_RGBA : GL_RGB;
 
     glGenTextures(1, &ID);
     glBindTexture(GL_TEXTURE_2D, ID);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_BGR, GL_UNSIGNED_BYTE, data);
+    glTexImage2D(GL_TEXTURE_2D, 0, format, img.width, img.height, 0, format, GL_UNSIGNED_BYTE, img.pixels.data());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
     logger.info("Texture loaded from file: " + path);
-    delete[] data;
 }
 
-Texture::~Texture() 
+Texture::Texture(unsigned char r, unsigned char g, unsigned char b, unsigned char a) : logger("Texture")
 {
-    glDeleteTextures(1, &ID);
+    unsigned char pixel[4] = { r, g, b, a };
+
+    glGenTextures(1, &ID);
+    glBindTexture(GL_TEXTURE_2D, ID);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
 
-void Texture::bind(unsigned int unit) 
+Texture::~Texture()
+{
+    if (ID != 0)
+    {
+        glDeleteTextures(1, &ID);
+        ID = 0;
+    }
+}
+
+void Texture::bind(unsigned int unit) const
 {
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_2D, ID);

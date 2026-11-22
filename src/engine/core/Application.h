@@ -1,53 +1,34 @@
 #ifndef APPLICATION_H
 #define APPLICATION_H
-#include <memory>
-#include "Window.h"
-#include "Shader.h"
-#include "Texture.h"
-#include "Mesh.h"
-#include "Camera.h"
-#include "Transform.h"
+#include "engine/platform/Window.h"
+#include "engine/renderer/Renderer.h"
+#include "engine/resources/ResourceManager.h"
+#include "engine/scene/Camera.h"
+#include "engine/scene/Scene.h"
 
-class Application 
+class Application
 {
-    Camera camera;
+    bool wasCursorLocked = false;
+    void updateInput(float dt);
+protected:
     Window window;
+    ResourceManager resources;
+    Renderer renderer;
+    Scene scene;
+    Camera camera;
+    float runTime = 0.0f;
 
-    std::unique_ptr<Shader> cubeShader;
-    std::unique_ptr<Texture> cubeTexture;
-    std::unique_ptr<Texture> specularMap;
-    std::unique_ptr<Texture> normalMap;
-    std::unique_ptr<Mesh> cubeMesh;
-
-    Vec3 positions[5] = {
-        { 0.0f,  0.0f,  0.0f},
-        { 2.0f,  5.0f, -15.0f},
-        {-1.5f, -2.2f, -2.5f},
-        {-3.8f, -2.0f, -12.3f},
-        { 2.4f, -0.4f, -3.5f}
-    };
-
-    Vec3 lightPositions[4] = {
-        { 0.7f,  0.2f,  2.0f},
-        { 2.3f, -3.3f, -4.0f},
-        {-4.0f,  2.0f, -12.0f},
-        { 0.0f,  0.0f, -3.0f}
-    };
-
-    Vec3 lightColors[4] = {
-        {1.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
-        {0.0f, 0.0f, 1.0f},
-        {1.0f, 1.0f, 1.0f} 
-    };
-
-    float runTime;
-    
-    void update(float dt);
-    void render();
+    virtual void onInit() {}
+    virtual void onUpdate(float dt) {}
+    virtual void onRender();
+    virtual void onShutdown() {}
 public:
-    Application();
-    ~Application() = default;
+    Application(int width = 800, int height = 600, const char* title = "Engine");
+    virtual ~Application() = default;
+
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
+
     void run();
 };
 #endif

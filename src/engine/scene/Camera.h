@@ -1,6 +1,6 @@
 #ifndef CAMERA_H
 #define CAMERA_H
-#include "Math3d.h"
+#include "engine/math/Math3d.h"
 
 class Camera
 {

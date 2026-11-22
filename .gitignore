@@ -1,4 +1,6 @@
 *.log
 *.bmp
+*.tga
+*.obj
 backup.txt
 build/

@@ -1,4 +1,4 @@
-#include "Camera.h"
+#include "engine/scene/Camera.h"
 
 #define SPACE_KEY 0x20
 #define SHIFT_KEY 0x10

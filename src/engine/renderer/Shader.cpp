@@ -1,13 +1,18 @@
-#include "Shader.h"
-#include "GLLoader.h"
+#include "engine/renderer/Shader.h"
+#include "engine/platform/GLLoader.h"
 #include <fstream>
 #include <sstream>
-#include <iostream>
 
 Shader::Shader(const char* vPath, const char* fPath) : logger("Shader")
 {
     std::string vCode = readFile(vPath);
     std::string fCode = readFile(fPath);
+    if (vCode.empty() || fCode.empty())
+    {
+        logger.error("Shader source is empty, skipping compilation.");
+        return;
+    }
+
     const char* vPtr = vCode.c_str();
     const char* fPtr = fCode.c_str();
 
@@ -26,6 +31,18 @@ Shader::Shader(const char* vPath, const char* fPath) : logger("Shader")
     glAttachShader(ID, f);
     glLinkProgram(ID);
     checkCompileErrors(ID, "PROGRAM");
+
+    glDeleteShader(v);
+    glDeleteShader(f);
+}
+
+Shader::~Shader()
+{
+    if (ID != 0)
+    {
+        glDeleteProgram(ID);
+        ID = 0;
+    }
 }
 
 void Shader::use() 
@@ -33,14 +50,36 @@ void Shader::use()
     glUseProgram(ID); 
 }
 
-void Shader::setMat4(const char* name, const Mat4& mat) 
+int Shader::getUniformLocation(const std::string& name)
 {
-    glUniformMatrix4fv(glGetUniformLocation(ID, name), 1, GL_FALSE, mat.m);
+    auto it = uniformCache.find(name);
+    if (it != uniformCache.end())
+    {
+        return it->second;
+    }
+
+    int location = glGetUniformLocation(ID, name.c_str());
+    if (location == -1)
+    {
+        logger.warn("Uniform not found or unused: " + name);
+    }
+
+    uniformCache[name] = location;
+    return location;
 }
 
-void Shader::checkCompileErrors(unsigned int shader, std::string type) 
+void Shader::setMat4(const std::string& name, const Mat4& mat) 
 {
-    int success;
+    int loc = getUniformLocation(name);
+    if (loc != -1)
+    {
+        glUniformMatrix4fv(loc, 1, GL_FALSE, mat.m);
+    }
+}
+
+void Shader::checkCompileErrors(unsigned int shader, const std::string& type) 
+{
+    int success = 0;
     char infoLog[1024];
     if (type != "PROGRAM") 
     {
@@ -48,8 +87,7 @@ void Shader::checkCompileErrors(unsigned int shader, std::string type)
         if (!success) 
         {
             glGetShaderInfoLog(shader, 1024, NULL, infoLog);
-            // std::cerr << "ERROR::SHADER_COMPILATION_ERROR of type: " << type << "\n" << infoLog << std::endl;
-            logger.error("ERROR::PROGRAM_LINKING_ERROR of type:" + type + "; " + infoLog);
+            logger.error("ERROR::SHADER_COMPILATION_ERROR of type: " + type + "; " + infoLog);
         }
     } 
     else 
@@ -58,8 +96,7 @@ void Shader::checkCompileErrors(unsigned int shader, std::string type)
         if (!success) 
         {
             glGetProgramInfoLog(shader, 1024, NULL, infoLog);
-            logger.error("ERROR::PROGRAM_LINKING_ERROR of type:" + type + "; " + infoLog);
-            // std::cerr << "ERROR::PROGRAM_LINKING_ERROR of type: " << type << "\n" << infoLog << std::endl;
+            logger.error("ERROR::PROGRAM_LINKING_ERROR of type: " + type + "; " + infoLog);
         }
     }
 }
@@ -67,30 +104,47 @@ void Shader::checkCompileErrors(unsigned int shader, std::string type)
 std::string Shader::readFile(const char* path) 
 {
     std::ifstream f(path);
+    if (!f.is_open())
+    {
+        logger.error("Failed to open shader file: " + std::string(path));
+        return "";
+    }
     std::stringstream s;
     s << f.rdbuf();
     return s.str();
 }
 
-void Shader::setVec3(const char* name, const Vec3& vec)
+void Shader::setVec3(const std::string& name, const Vec3& vec)
 {
-    glUniform3f(glGetUniformLocation(ID, name), vec.x, vec.y, vec.z);
+    int loc = getUniformLocation(name);
+    if (loc != -1)
+    {
+        glUniform3f(loc, vec.x, vec.y, vec.z);
+    }
 }
 
-void Shader::setFloat(const char* name, float value)
+void Shader::setFloat(const std::string& name, float value)
 {
-    glUniform1f(glGetUniformLocation(ID, name), value);
+    int loc = getUniformLocation(name);
+    if (loc != -1)
+    {
+        glUniform1f(loc, value);
+    }
 }
 
-void Shader::setInt(const char* name, int value)
+void Shader::setInt(const std::string& name, int value)
 {
-    glUniform1i(glGetUniformLocation(ID, name), value);
+    int loc = getUniformLocation(name);
+    if (loc != -1)
+    {
+        glUniform1i(loc, value);
+    }
 }
 
 void Shader::setMaterial(const std::string& name, const Material& mater) 
 {
-    setVec3((name + ".ambient").c_str(), mater.ambient);
-    setVec3((name + ".diffuse").c_str(), mater.diffuse);
-    setVec3((name + ".specular").c_str(), mater.specular);
-    setFloat((name + ".shininess").c_str(), mater.shininess);
+    setVec3(name + ".ambient", mater.ambient);
+    setVec3(name + ".diffuse", mater.diffuse);
+    setVec3(name + ".specular", mater.specular);
+    setFloat(name + ".shininess", mater.shininess);
 }
