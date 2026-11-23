@@ -85,7 +85,8 @@ void Scene::submit(Renderer& renderer) const
             shader.get(),
             &entity->getMaterial(),
             entity->getTransform().getModelMatrix(),
-            entity->getCastsShadows()
+            entity->getCastsShadows(),
+            entity->getAffectsSSAO()
         );
     }
 

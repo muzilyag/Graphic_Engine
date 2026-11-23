@@ -18,6 +18,8 @@ class Shader
     bool checkCompileErrors(unsigned int shader, const std::string& type);
     unsigned int compileProgram(const std::string& vPath, const std::string& fPath);
     int getUniformLocation(const std::string& name, bool warnIfMissing = true);
+    void trySetVec3(const std::string& name, const Vec3& vec);
+    void trySetFloat(const std::string& name, float value);
 public:
     Shader(const char* vPath, const char* fPath);
     ~Shader();
@@ -27,6 +29,7 @@ public:
 
     bool reload();
     void use();
+    bool isValid() const { return ID != 0; }
     bool hasUniform(const std::string& name);
     // Setters
     void setMat4(const std::string& name, const Mat4& mat);

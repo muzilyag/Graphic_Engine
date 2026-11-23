@@ -38,6 +38,7 @@ PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer = nullptr;
 PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage = nullptr;
 PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer = nullptr;
 PFNGLDRAWBUFFERSPROC glDrawBuffers = nullptr;
+PFNGLCOLORMASKIPROC glColorMaski = nullptr;
 PFNGLDELETEBUFFERSPROC glDeleteBuffers = nullptr;
 PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays = nullptr;
 PFNGLGETSHADERIVPROC glGetShaderiv = nullptr;
@@ -93,6 +94,7 @@ void loadExtensions()
     glRenderbufferStorage       = (PFNGLRENDERBUFFERSTORAGEPROC)wglGetProcAddress("glRenderbufferStorage");
     glFramebufferRenderbuffer   = (PFNGLFRAMEBUFFERRENDERBUFFERPROC)wglGetProcAddress("glFramebufferRenderbuffer");
     glDrawBuffers               = (PFNGLDRAWBUFFERSPROC)wglGetProcAddress("glDrawBuffers");
+    glColorMaski                = (PFNGLCOLORMASKIPROC)wglGetProcAddress("glColorMaski");
     glDeleteBuffers             = (PFNGLDELETEBUFFERSPROC)wglGetProcAddress("glDeleteBuffers");
     glDeleteVertexArrays        = (PFNGLDELETEVERTEXARRAYSPROC)wglGetProcAddress("glDeleteVertexArrays");
     glGetShaderiv               = (PFNGLGETSHADERIVPROC)wglGetProcAddress("glGetShaderiv");

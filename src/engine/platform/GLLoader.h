@@ -94,6 +94,7 @@ typedef void (WINAPI * PFNGLBINDRENDERBUFFERPROC) (GLenum target, UINT renderbuf
 typedef void (WINAPI * PFNGLRENDERBUFFERSTORAGEPROC) (GLenum target, GLenum internalformat, int width, int height);
 typedef void (WINAPI * PFNGLFRAMEBUFFERRENDERBUFFERPROC) (GLenum target, GLenum attachment, GLenum renderbuffertarget, UINT renderbuffer);
 typedef void (WINAPI * PFNGLDRAWBUFFERSPROC) (int n, const GLenum* bufs);
+typedef void (WINAPI * PFNGLCOLORMASKIPROC) (UINT buf, GLboolean r, GLboolean g, GLboolean b, GLboolean a);
 typedef void (WINAPI * PFNGLDELETEBUFFERSPROC) (int n, const UINT* buffers);
 typedef void (WINAPI * PFNGLDELETEVERTEXARRAYSPROC) (int n, const UINT* arrays);
 typedef void (WINAPI * PFNGLGETSHADERIVPROC) (UINT shader, UINT pname, int* params);
@@ -147,6 +148,7 @@ extern PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer;
 extern PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage;
 extern PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer;
 extern PFNGLDRAWBUFFERSPROC glDrawBuffers;
+extern PFNGLCOLORMASKIPROC glColorMaski;
 extern PFNGLDELETEBUFFERSPROC glDeleteBuffers;
 extern PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays;
 extern PFNGLGETSHADERIVPROC glGetShaderiv;

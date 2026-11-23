@@ -2,8 +2,8 @@
 #include "engine/utils/Logger.h"
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 
@@ -95,14 +95,15 @@ ImageData ImageLoader::loadBMP(const std::string& path)
     std::memcpy(&bpp,         &head[28], sizeof(bpp));
     std::memcpy(&compression, &head[30], sizeof(compression));
 
-    if (w <= 0 || rawH == 0 || (bpp != 24 && bpp != 32) || compression != 0)
+    int64_t absH = (rawH < 0) ? -static_cast<int64_t>(rawH) : static_cast<int64_t>(rawH);
+    if (w <= 0 || w > 32768 || absH <= 0 || absH > 32768 || (bpp != 24 && bpp != 32) || compression != 0)
     {
         logger.error("Unsupported BMP format: " + path);
         return {};
     }
 
     bool topDown = (rawH < 0);
-    int h = std::abs(rawH);
+    int h = static_cast<int>(absH);
     int channels = bpp / 8;
 
     img.width = w;
@@ -111,6 +112,11 @@ ImageData ImageLoader::loadBMP(const std::string& path)
     img.pixels.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * static_cast<size_t>(channels));
 
     f.seekg(offset, std::ios::beg);
+    if (!f)
+    {
+        logger.error("Invalid BMP pixel offset: " + path);
+        return {};
+    }
 
     size_t rowDataBytes = static_cast<size_t>(w) * static_cast<size_t>(channels);
     size_t rowStride = (rowDataBytes + 3) & ~static_cast<size_t>(3);
@@ -176,6 +182,11 @@ ImageData ImageLoader::loadTGA(const std::string& path)
     if (idLength > 0)
     {
         f.seekg(idLength, std::ios::cur);
+        if (!f)
+        {
+            logger.error("Unexpected EOF while skipping TGA ID field: " + path);
+            return {};
+        }
     }
 
     int channels = bpp / 8;

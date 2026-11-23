@@ -26,6 +26,11 @@ void Framebuffer::create()
         return;
     }
 
+    if (glActiveTexture)
+    {
+        glActiveTexture(GL_TEXTURE0);
+    }
+
     glGenFramebuffers(1, &FBO);
     glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
@@ -200,6 +205,10 @@ void Framebuffer::generateColorMipmaps(unsigned int attachmentIndex) const
         return;
     }
 
+    if (glActiveTexture)
+    {
+        glActiveTexture(GL_TEXTURE0);
+    }
     glBindTexture(GL_TEXTURE_2D, colorTextures[attachmentIndex]);
     glGenerateMipmap(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, 0);

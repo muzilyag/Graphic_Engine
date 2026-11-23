@@ -34,6 +34,7 @@ public:
     void swapBuffers();
     // Getters
     bool* getKeys() { return keys; }
+    const bool* getKeys() const { return keys; }
     HWND getHwnd() const { return hwnd; }
     bool getCursorLocked() const { return isCursorLocked; }
     bool isFocused() const { return hwnd != nullptr && GetForegroundWindow() == hwnd; }

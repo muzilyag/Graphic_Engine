@@ -2,7 +2,6 @@
 #define MESH_H
 #include <cstddef>
 #include <vector>
-#include "engine/platform/GLLoader.h"
 #include "engine/math/Bounds.h"
 #include "engine/math/Math3d.h"
 #include "engine/utils/Logger.h"

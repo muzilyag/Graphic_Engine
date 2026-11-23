@@ -143,6 +143,13 @@ Window::~Window()
         ReleaseDC(hwnd, hdc);
         hdc = nullptr;
     }
+    if (hwnd)
+    {
+        HWND hwndToDestroy = hwnd;
+        hwnd = nullptr;
+        SetWindowLongPtr(hwndToDestroy, GWLP_USERDATA, 0);
+        DestroyWindow(hwndToDestroy);
+    }
 }
 
 bool Window::shouldClose() 
@@ -234,6 +241,10 @@ LRESULT CALLBACK Window::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         case WM_DESTROY: 
         {
+            if (win)
+            {
+                win->hwnd = nullptr;
+            }
             PostQuitMessage(0); 
             return 0;
         }

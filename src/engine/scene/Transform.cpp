@@ -29,9 +29,5 @@ void Transform::rotate(const Vec3& axis, float angle)
 
 Mat4 Transform::getModelMatrix() const
 {
-    Mat4 pos = Mat4::translate(position.x, position.y, position.z);
-    Mat4 rotM = Mat4::fromQuat(rotation);
-    Mat4 scl = Mat4::scale(scale.x, scale.y, scale.z);
-
-    return Mat4::multiply(pos, Mat4::multiply(rotM, scl));
+    return Mat4::trs(position, rotation, scale);
 }

@@ -13,6 +13,22 @@
 
 class ResourceManager;
 
+struct SkyColors
+{
+    Vec3 zenith{0.04f, 0.09f, 0.24f};
+    Vec3 horizon{0.32f, 0.45f, 0.65f};
+    Vec3 ground{0.03f, 0.035f, 0.05f};
+};
+
+struct ShadowSettings
+{
+    Vec3 center{0.0f, -1.5f, -4.0f};
+    float halfExtent = 16.0f;
+    float nearPlane = 1.0f;
+    float farPlane = 55.0f;
+    float distance = 22.0f;
+};
+
 struct RenderStats
 {
     int totalObjects = 0;
@@ -29,6 +45,7 @@ struct RenderCommand
     Mat4 modelMatrix;
     AABB worldBounds;
     bool castsShadows = true;
+    bool affectsSSAO = true;
     float distanceSq = 0.0f;
 };
 
@@ -46,11 +63,22 @@ struct InstancedRenderCommand
 
 class Renderer
 {
+    struct MaterialTexBindings
+    {
+        bool albedo = false;
+        bool normal = false;
+        bool metallic = false;
+        bool roughness = false;
+        bool ao = false;
+    };
+
     Mat4 viewMatrix;
     Mat4 projectionMatrix;
     Frustum cameraFrustum;
     Vec3 viewPos{0.0f, 0.0f, 0.0f};
     Vec3 sunDirection{0.45f, 0.65f, -0.6f};
+    SkyColors skyColors;
+    ShadowSettings shadowSettings;
     int viewportWidth = 800;
     int viewportHeight = 600;
     float clearR = 0.02f;
@@ -65,6 +93,7 @@ class Renderer
     bool refractionEnabled = true;
     float exposure = 1.0f;
     float bloomStrength = 0.4f;
+    float bloomThreshold = 1.2f;
     unsigned int screenVAO = 0;
 
     RenderStats stats;
@@ -104,8 +133,10 @@ class Renderer
     std::shared_ptr<Shader> postProcessShader;
     std::shared_ptr<Shader> fxaaShader;
 
-    void bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive, bool& hasAlbedoMap, bool& hasNormalMap, bool& hasMetallicMap, bool& hasRoughnessMap, bool& hasAoMap);
-    void bindMaterialTextures(const Material& mat, bool hasAlbedoMap, bool hasNormalMap, bool hasMetallicMap, bool hasRoughnessMap, bool hasAoMap);
+    void setCullState(bool& cullEnabled, bool wantCull);
+    void bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive, MaterialTexBindings& texBindings);
+    void bindMaterialTextures(const Material& mat, const MaterialTexBindings& texBindings);
+    void prepareMaterialPass(Shader*& activeShader, bool& cullEnabled, MaterialTexBindings& texBindings, Shader* shader, const Material& mat, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive);
     void drawCommandList(const std::vector<RenderCommand>& list, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive);
     void drawInstancedList(const Mat4& lightSpaceMatrix, bool ssaoActive);
 public:
@@ -115,7 +146,7 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void init(const ResourceManager& resources);
+    void init(const ResourceManager& resources, int width = 800, int height = 600);
     void shutdown();
 
     void setSkybox(std::shared_ptr<Mesh> mesh, std::shared_ptr<Shader> shader);
@@ -123,6 +154,8 @@ public:
     void setSSAOShaders(std::shared_ptr<Shader> gBuf, std::shared_ptr<Shader> gBufInstanced, std::shared_ptr<Shader> ssao, std::shared_ptr<Shader> ssaoBlur);
     void setPostProcessShaders(std::shared_ptr<Shader> blur, std::shared_ptr<Shader> postProcess, std::shared_ptr<Shader> fxaa = nullptr);
     void setSunDirection(const Vec3& dir);
+    void setSkyColors(const SkyColors& colors) { skyColors = colors; }
+    void setShadowSettings(const ShadowSettings& settings) { shadowSettings = settings; }
     void setClearColor(float r, float g, float b, float a = 1.0f);
     void setWireframe(bool enabled) { wireframe = enabled; }
     void setBloomEnabled(bool enabled) { bloomEnabled = enabled; }
@@ -137,13 +170,14 @@ public:
     bool isRefractionEnabled() const { return refractionEnabled; }
     void setExposure(float value) { exposure = value; }
     void setBloomStrength(float value) { bloomStrength = value; }
+    void setBloomThreshold(float value) { bloomThreshold = value; }
     const RenderStats& getStats() const { return stats; }
 
     void beginFrame(const Mat4& view, const Mat4& projection, const Vec3& cameraPos, int width, int height);
     void submitDirectionalLight(const DirectionalLight& light);
     void submitSpotLight(const SpotLight& light);
     void submitLight(const PointLight& light);
-    void submit(const Mesh* mesh, Shader* shader, const Material* material, const Mat4& modelMatrix, bool castsShadows = true);
+    void submit(const Mesh* mesh, Shader* shader, const Material* material, const Mat4& modelMatrix, bool castsShadows = true, bool affectsSSAO = true);
     void submitInstanced(Mesh* mesh, Shader* shader, const Material* material, const std::vector<Mat4>* transforms, bool castsShadows = true);
     void flush();
 };

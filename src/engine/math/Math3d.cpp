@@ -157,6 +157,46 @@ Mat4 Mat4::fromQuat(const Quat& q)
     return r;
 }
 
+Mat4 Mat4::trs(const Vec3& pos, const Quat& rot, const Vec3& scl)
+{
+    Mat4 r = fromQuat(rot);
+    r.m[0] *= scl.x; r.m[1] *= scl.x; r.m[2]  *= scl.x;
+    r.m[4] *= scl.y; r.m[5] *= scl.y; r.m[6]  *= scl.y;
+    r.m[8] *= scl.z; r.m[9] *= scl.z; r.m[10] *= scl.z;
+    r.m[12] = pos.x; r.m[13] = pos.y; r.m[14]  = pos.z;
+    return r;
+}
+
+Mat4 Mat4::trsEulerYX(const Vec3& pos, float rotY, float rotX, const Vec3& scl)
+{
+    float cy = cosf(rotY);
+    float sy = sinf(rotY);
+    float cx = cosf(rotX);
+    float sx = sinf(rotX);
+
+    Mat4 r;
+    r.m[0]  = cy * scl.x;
+    r.m[1]  = 0.0f;
+    r.m[2]  = -sy * scl.x;
+    r.m[3]  = 0.0f;
+
+    r.m[4]  = sy * sx * scl.y;
+    r.m[5]  = cx * scl.y;
+    r.m[6]  = cy * sx * scl.y;
+    r.m[7]  = 0.0f;
+
+    r.m[8]  = sy * cx * scl.z;
+    r.m[9]  = -sx * scl.z;
+    r.m[10] = cy * cx * scl.z;
+    r.m[11] = 0.0f;
+
+    r.m[12] = pos.x;
+    r.m[13] = pos.y;
+    r.m[14] = pos.z;
+    r.m[15] = 1.0f;
+    return r;
+}
+
 Quat::Quat()
 {
     x = y = z = 0;

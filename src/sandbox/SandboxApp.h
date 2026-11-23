@@ -29,7 +29,6 @@ class SandboxApp : public Application
     std::vector<OrbitInstanceData> sphereOrbitData;
 
     bool flashlightEnabled = true;
-    bool wasFDown = false;
 
     void updateInstancedOrbit(InstancedBatch* batch, const std::vector<OrbitInstanceData>& data);
 protected:

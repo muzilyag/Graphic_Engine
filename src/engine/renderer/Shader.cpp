@@ -87,8 +87,11 @@ bool Shader::reload()
 }
 
 void Shader::use() 
-{ 
-    glUseProgram(ID); 
+{
+    if (ID != 0)
+    {
+        glUseProgram(ID);
+    }
 }
 
 bool Shader::hasUniform(const std::string& name)
@@ -98,6 +101,11 @@ bool Shader::hasUniform(const std::string& name)
 
 int Shader::getUniformLocation(const std::string& name, bool warnIfMissing)
 {
+    if (ID == 0)
+    {
+        return -1;
+    }
+
     auto it = uniformCache.find(name);
     if (it != uniformCache.end())
     {
@@ -112,6 +120,24 @@ int Shader::getUniformLocation(const std::string& name, bool warnIfMissing)
 
     uniformCache[name] = location;
     return location;
+}
+
+void Shader::trySetVec3(const std::string& name, const Vec3& vec)
+{
+    int loc = getUniformLocation(name, false);
+    if (loc != -1)
+    {
+        glUniform3f(loc, vec.x, vec.y, vec.z);
+    }
+}
+
+void Shader::trySetFloat(const std::string& name, float value)
+{
+    int loc = getUniformLocation(name, false);
+    if (loc != -1)
+    {
+        glUniform1f(loc, value);
+    }
 }
 
 void Shader::setMat4(const std::string& name, const Mat4& mat) 
@@ -201,48 +227,15 @@ void Shader::setInt(const std::string& name, int value)
 
 void Shader::setMaterial(const std::string& name, const Material& mater) 
 {
-    if (hasUniform(name + ".albedo"))
-    {
-        setVec3(name + ".albedo", mater.albedo);
-    }
-    if (hasUniform(name + ".metallic"))
-    {
-        setFloat(name + ".metallic", mater.metallic);
-    }
-    if (hasUniform(name + ".roughness"))
-    {
-        setFloat(name + ".roughness", mater.roughness);
-    }
-    if (hasUniform(name + ".ao"))
-    {
-        setFloat(name + ".ao", mater.ao);
-    }
-    if (hasUniform(name + ".emissive"))
-    {
-        setVec3(name + ".emissive", mater.emissive);
-    }
-    if (hasUniform(name + ".opacity"))
-    {
-        setFloat(name + ".opacity", mater.opacity);
-    }
-    if (hasUniform(name + ".alphaCutoff"))
-    {
-        setFloat(name + ".alphaCutoff", mater.alphaCutoff);
-    }
-    if (hasUniform(name + ".transmission"))
-    {
-        setFloat(name + ".transmission", mater.transmission);
-    }
-    if (hasUniform(name + ".ior"))
-    {
-        setFloat(name + ".ior", mater.ior);
-    }
-    if (hasUniform(name + ".refractionStrength"))
-    {
-        setFloat(name + ".refractionStrength", mater.refractionStrength);
-    }
-    if (hasUniform(name + ".chromaticAberration"))
-    {
-        setFloat(name + ".chromaticAberration", mater.chromaticAberration);
-    }
+    trySetVec3(name + ".albedo", mater.albedo);
+    trySetFloat(name + ".metallic", mater.metallic);
+    trySetFloat(name + ".roughness", mater.roughness);
+    trySetFloat(name + ".ao", mater.ao);
+    trySetVec3(name + ".emissive", mater.emissive);
+    trySetFloat(name + ".opacity", mater.opacity);
+    trySetFloat(name + ".alphaCutoff", mater.alphaCutoff);
+    trySetFloat(name + ".transmission", mater.transmission);
+    trySetFloat(name + ".ior", mater.ior);
+    trySetFloat(name + ".refractionStrength", mater.refractionStrength);
+    trySetFloat(name + ".chromaticAberration", mater.chromaticAberration);
 }

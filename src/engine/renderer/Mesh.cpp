@@ -1,4 +1,5 @@
 #include "engine/renderer/Mesh.h"
+#include "engine/platform/GLLoader.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -185,6 +186,7 @@ void Mesh::drawInstanced(const Mat4* matrices, size_t count)
     }
     else if (glBufferSubData)
     {
+        glBufferData(GL_ARRAY_BUFFER, static_cast<ptrdiff_t>(instanceCapacity * sizeof(Mat4)), nullptr, GL_DYNAMIC_DRAW);
         glBufferSubData(GL_ARRAY_BUFFER, 0, byteSize, matrices);
     }
     else

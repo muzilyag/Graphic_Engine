@@ -71,9 +71,19 @@ uniform int useSSAO;
 uniform int useRefraction;
 uniform vec2 screenSize;
 uniform vec3 sunDirection;
+uniform vec3 skyZenithColor;
+uniform vec3 skyHorizonColor;
+uniform vec3 skyGroundColor;
+uniform float bloomThreshold;
 
 uniform Material material;
 uniform vec3 viewPos;
+
+float calcAttenuation(float dist, float radius) {
+    float distRatio = dist / max(radius, 0.001);
+    float smoothFactor = clamp(1.0 - pow(distRatio, 4.0), 0.0, 1.0);
+    return (smoothFactor * smoothFactor) / (dist * dist + 0.25);
+}
 
 float distributionGGX(vec3 N, vec3 H, float roughness) {
     float a = roughness * roughness;
@@ -151,16 +161,13 @@ float calcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
 }
 
 vec3 sampleProceduralEnv(vec3 dir, vec3 sunDir, float roughness) {
-    vec3 zenithColor  = vec3(0.04, 0.09, 0.24);
-    vec3 horizonColor = vec3(0.32, 0.45, 0.65);
-    vec3 groundColor  = vec3(0.03, 0.035, 0.05);
-    vec3 avgSkyColor  = vec3(0.16, 0.22, 0.32);
+    vec3 avgSkyColor = (skyZenithColor + skyHorizonColor) * 0.45;
 
     vec3 env;
     if (dir.y >= 0.0) {
-        env = mix(horizonColor, zenithColor, pow(dir.y, 0.55));
+        env = mix(skyHorizonColor, skyZenithColor, pow(dir.y, 0.55));
     } else {
-        env = mix(horizonColor, groundColor, pow(clamp(-dir.y, 0.0, 1.0), 0.35));
+        env = mix(skyHorizonColor, skyGroundColor, pow(clamp(-dir.y, 0.0, 1.0), 0.35));
     }
 
     float sunAmt = max(dot(dir, sunDir), 0.0);
@@ -219,9 +226,7 @@ void main() {
         float cone = clamp((theta - spotLight.outerCutOff) / epsilon, 0.0, 1.0);
 
         if (cone > 0.0) {
-            float distRatio = dist / max(spotLight.radius, 0.001);
-            float smoothFactor = clamp(1.0 - pow(distRatio, 4.0), 0.0, 1.0);
-            float attenuation = (smoothFactor * smoothFactor) / (dist * dist + 0.25);
+            float attenuation = calcAttenuation(dist, spotLight.radius);
             vec3 radiance = spotLight.color * spotLight.intensity * attenuation * cone;
             Lo += calcBRDF(N, V, L, albedo, metallic, roughness, F0, diffuseScale) * radiance;
         }
@@ -231,11 +236,7 @@ void main() {
         vec3 toLight = pointLights[i].position - FragPos;
         float dist = length(toLight);
         vec3 L = toLight / max(dist, 0.0001);
-
-        float distRatio = dist / max(pointLights[i].radius, 0.001);
-        float smoothFactor = clamp(1.0 - pow(distRatio, 4.0), 0.0, 1.0);
-        float attenuation = (smoothFactor * smoothFactor) / (dist * dist + 0.25);
-
+        float attenuation = calcAttenuation(dist, pointLights[i].radius);
         vec3 radiance = pointLights[i].color * pointLights[i].intensity * attenuation;
         Lo += calcBRDF(N, V, L, albedo, metallic, roughness, F0, diffuseScale) * radiance;
     }
@@ -244,7 +245,7 @@ void main() {
     vec3 kSAmb = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
     vec3 kDAmb = (vec3(1.0) - kSAmb) * (1.0 - metallic);
 
-    vec3 skyIrradiance = mix(vec3(0.04, 0.045, 0.06), vec3(0.18, 0.25, 0.38), N.y * 0.5 + 0.5);
+    vec3 skyIrradiance = mix(skyGroundColor * 1.2, (skyZenithColor + skyHorizonColor) * 0.55, N.y * 0.5 + 0.5);
     vec3 diffuseAmbient = kDAmb * albedo * skyIrradiance * diffuseScale;
 
     vec3 R = reflect(-V, N);
@@ -306,6 +307,6 @@ void main() {
     FragColor = vec4(result, outAlpha);
 
     float peak = max(result.r, max(result.g, result.b));
-    float contrib = max(peak - 1.2, 0.0) / max(peak, 0.0001);
+    float contrib = max(peak - bloomThreshold, 0.0) / max(peak, 0.0001);
     BrightColor = vec4(result * contrib, outAlpha);
 }

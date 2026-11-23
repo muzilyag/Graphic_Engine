@@ -42,5 +42,7 @@ struct Mat4
     static Mat4 lookAt(Vec3 eye, Vec3 target, Vec3 up);
     static Mat4 scale(float x, float y, float z);
     static Mat4 fromQuat(const Quat& q);
+    static Mat4 trs(const Vec3& pos, const Quat& rot, const Vec3& scl);
+    static Mat4 trsEulerYX(const Vec3& pos, float rotY, float rotX, const Vec3& scl);
 };
 #endif

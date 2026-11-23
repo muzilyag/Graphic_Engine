@@ -5,34 +5,33 @@
 
 namespace
 {
-    Mat4 buildFastTRS(float px, float py, float pz, float rotY, float rotX, float scale)
+    void initOrbitData(std::vector<OrbitInstanceData>& outData, int count, std::mt19937& rng, float minRadius, float maxRadius, float heightOffset, float scaleMul, float speedSign)
     {
-        float cy = cosf(rotY);
-        float sy = sinf(rotY);
-        float cx = cosf(rotX);
-        float sx = sinf(rotX);
+        std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
+        std::uniform_real_distribution<float> radiusDist(minRadius, maxRadius);
+        std::uniform_real_distribution<float> heightDist(-3.0f, 24.0f);
+        std::uniform_real_distribution<float> speedDist(0.04f, 0.22f);
+        std::uniform_real_distribution<float> rotDist(-1.8f, 1.8f);
+        std::uniform_real_distribution<float> scaleDist(0.25f, 0.95f);
+        std::uniform_real_distribution<float> bobAmpDist(0.2f, 1.2f);
+        std::uniform_real_distribution<float> bobSpeedDist(0.4f, 1.4f);
 
-        Mat4 r;
-        r.m[0]  = cy * scale;
-        r.m[1]  = 0.0f;
-        r.m[2]  = -sy * scale;
-        r.m[3]  = 0.0f;
-
-        r.m[4]  = sy * sx * scale;
-        r.m[5]  = cx * scale;
-        r.m[6]  = cy * sx * scale;
-        r.m[7]  = 0.0f;
-
-        r.m[8]  = sy * cx * scale;
-        r.m[9]  = -sx * scale;
-        r.m[10] = cy * cx * scale;
-        r.m[11] = 0.0f;
-
-        r.m[12] = px;
-        r.m[13] = py;
-        r.m[14] = pz;
-        r.m[15] = 1.0f;
-        return r;
+        outData.clear();
+        outData.reserve(count);
+        for (int i = 0; i < count; ++i)
+        {
+            OrbitInstanceData d;
+            d.radius     = radiusDist(rng);
+            d.baseAngle  = angleDist(rng);
+            d.orbitSpeed = speedDist(rng) * ((i % 2 == 0) ? speedSign : -speedSign);
+            d.height     = heightDist(rng) + heightOffset;
+            d.bobAmp     = bobAmpDist(rng);
+            d.bobSpeed   = bobSpeedDist(rng);
+            d.rotSpeedY  = rotDist(rng);
+            d.rotSpeedX  = rotDist(rng);
+            d.scale      = scaleDist(rng) * scaleMul;
+            outData.push_back(d);
+        }
     }
 }
 
@@ -70,6 +69,7 @@ void SandboxApp::onInit()
     renderer.setPostProcessShaders(blurShader, postProcessShader, fxaaShader);
     renderer.setExposure(1.0f);
     renderer.setBloomStrength(0.45f);
+    renderer.setBloomThreshold(1.2f);
 
     DirectionalLight sun;
     sun.direction = {-0.45f, -0.65f, 0.6f};
@@ -262,6 +262,7 @@ void SandboxApp::onInit()
         lightCube.getTransform().setPosition(initialLights[i].position);
         lightCube.getTransform().setScale({0.18f, 0.18f, 0.18f});
         lightCube.setCastsShadows(false);
+        lightCube.setAffectsSSAO(false);
         lightEntities.push_back(&lightCube);
     }
 
@@ -281,52 +282,14 @@ void SandboxApp::onInit()
     instancedSpheres = &scene.createInstancedBatch("asteroid_spheres", instSphereMesh, defaultInstShader, instSphereMat, true);
 
     std::mt19937 rng(42);
-    std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
-    std::uniform_real_distribution<float> cubeRadiusDist(10.5f, 65.0f);
-    std::uniform_real_distribution<float> sphereRadiusDist(12.0f, 60.0f);
-    std::uniform_real_distribution<float> heightDist(-3.0f, 24.0f);
-    std::uniform_real_distribution<float> speedDist(0.04f, 0.22f);
-    std::uniform_real_distribution<float> rotDist(-1.8f, 1.8f);
-    std::uniform_real_distribution<float> scaleDist(0.25f, 0.95f);
-    std::uniform_real_distribution<float> bobAmpDist(0.2f, 1.2f);
-    std::uniform_real_distribution<float> bobSpeedDist(0.4f, 1.4f);
-
     constexpr int CUBE_INSTANCES = 3500;
     constexpr int SPHERE_INSTANCES = 1500;
 
-    cubeOrbitData.reserve(CUBE_INSTANCES);
-    instancedCubes->transforms.resize(CUBE_INSTANCES);
-    for (int i = 0; i < CUBE_INSTANCES; ++i)
-    {
-        OrbitInstanceData d;
-        d.radius     = cubeRadiusDist(rng);
-        d.baseAngle  = angleDist(rng);
-        d.orbitSpeed = speedDist(rng) * ((i % 2 == 0) ? 1.0f : -1.0f);
-        d.height     = heightDist(rng);
-        d.bobAmp     = bobAmpDist(rng);
-        d.bobSpeed   = bobSpeedDist(rng);
-        d.rotSpeedY  = rotDist(rng);
-        d.rotSpeedX  = rotDist(rng);
-        d.scale      = scaleDist(rng);
-        cubeOrbitData.push_back(d);
-    }
+    initOrbitData(cubeOrbitData, CUBE_INSTANCES, rng, 10.5f, 65.0f, 0.0f, 1.0f, 1.0f);
+    initOrbitData(sphereOrbitData, SPHERE_INSTANCES, rng, 12.0f, 60.0f, 1.5f, 1.1f, -1.0f);
 
-    sphereOrbitData.reserve(SPHERE_INSTANCES);
+    instancedCubes->transforms.resize(CUBE_INSTANCES);
     instancedSpheres->transforms.resize(SPHERE_INSTANCES);
-    for (int i = 0; i < SPHERE_INSTANCES; ++i)
-    {
-        OrbitInstanceData d;
-        d.radius     = sphereRadiusDist(rng);
-        d.baseAngle  = angleDist(rng);
-        d.orbitSpeed = speedDist(rng) * ((i % 2 == 0) ? -1.0f : 1.0f);
-        d.height     = heightDist(rng) + 1.5f;
-        d.bobAmp     = bobAmpDist(rng);
-        d.bobSpeed   = bobSpeedDist(rng);
-        d.rotSpeedY  = rotDist(rng);
-        d.rotSpeedX  = rotDist(rng);
-        d.scale      = scaleDist(rng) * 1.1f;
-        sphereOrbitData.push_back(d);
-    }
 
     updateInstancedOrbit(instancedCubes, cubeOrbitData);
     updateInstancedOrbit(instancedSpheres, sphereOrbitData);
@@ -347,10 +310,13 @@ void SandboxApp::updateInstancedOrbit(InstancedBatch* batch, const std::vector<O
     {
         const OrbitInstanceData& d = data[i];
         float a = d.baseAngle + runTime * d.orbitSpeed;
-        float px = CENTER_X + cosf(a) * d.radius;
-        float pz = CENTER_Z + sinf(a) * d.radius;
-        float py = d.height + sinf(runTime * d.bobSpeed + d.baseAngle) * d.bobAmp;
-        batch->transforms[i] = buildFastTRS(px, py, pz, runTime * d.rotSpeedY, runTime * d.rotSpeedX, d.scale);
+        Vec3 pos = {
+            CENTER_X + cosf(a) * d.radius,
+            d.height + sinf(runTime * d.bobSpeed + d.baseAngle) * d.bobAmp,
+            CENTER_Z + sinf(a) * d.radius
+        };
+        Vec3 scl = { d.scale, d.scale, d.scale };
+        batch->transforms[i] = Mat4::trsEulerYX(pos, runTime * d.rotSpeedY, runTime * d.rotSpeedX, scl);
     }
 }
 
@@ -358,18 +324,9 @@ void SandboxApp::onUpdate(float dt)
 {
     (void)dt;
 
-    if (window.isFocused())
+    if (isKeyPressed('F'))
     {
-        bool fDown = window.getKeys()['F'];
-        if (fDown && !wasFDown)
-        {
-            flashlightEnabled = !flashlightEnabled;
-        }
-        wasFDown = fDown;
-    }
-    else
-    {
-        wasFDown = false;
+        flashlightEnabled = !flashlightEnabled;
     }
 
     SpotLight& spot = scene.getSpotLight();

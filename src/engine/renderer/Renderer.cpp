@@ -6,8 +6,11 @@
 #include <string>
 #include <utility>
 
-void Renderer::init(const ResourceManager& resources)
+void Renderer::init(const ResourceManager& resources, int width, int height)
 {
+    viewportWidth  = std::max(1, width);
+    viewportHeight = std::max(1, height);
+
     defaultWhite   = resources.getDefaultWhiteTexture();
     defaultNormal  = resources.getDefaultNormalTexture();
     shadowFBO      = std::make_unique<Framebuffer>(2048, 2048, FramebufferType::DEPTH_ONLY);
@@ -114,40 +117,17 @@ void Renderer::beginFrame(const Mat4& view, const Mat4& projection, const Vec3& 
     viewportWidth = width;
     viewportHeight = height;
 
-    if (hdrFBO && (hdrFBO->getWidth() != width || hdrFBO->getHeight() != height))
-    {
-        hdrFBO->resize(width, height);
-    }
-    if (refractionFBO && (refractionFBO->getWidth() != width || refractionFBO->getHeight() != height))
-    {
-        refractionFBO->resize(width, height);
-    }
-    if (ldrFBO && (ldrFBO->getWidth() != width || ldrFBO->getHeight() != height))
-    {
-        ldrFBO->resize(width, height);
-    }
     int halfW = std::max(1, width / 2);
     int halfH = std::max(1, height / 2);
-    if (gBufferFBO && (gBufferFBO->getWidth() != halfW || gBufferFBO->getHeight() != halfH))
-    {
-        gBufferFBO->resize(halfW, halfH);
-    }
-    if (ssaoFBO && (ssaoFBO->getWidth() != halfW || ssaoFBO->getHeight() != halfH))
-    {
-        ssaoFBO->resize(halfW, halfH);
-    }
-    if (ssaoBlurFBO && (ssaoBlurFBO->getWidth() != halfW || ssaoBlurFBO->getHeight() != halfH))
-    {
-        ssaoBlurFBO->resize(halfW, halfH);
-    }
-    if (pingPongFBO[0] && (pingPongFBO[0]->getWidth() != halfW || pingPongFBO[0]->getHeight() != halfH))
-    {
-        pingPongFBO[0]->resize(halfW, halfH);
-    }
-    if (pingPongFBO[1] && (pingPongFBO[1]->getWidth() != halfW || pingPongFBO[1]->getHeight() != halfH))
-    {
-        pingPongFBO[1]->resize(halfW, halfH);
-    }
+
+    if (hdrFBO) hdrFBO->resize(width, height);
+    if (refractionFBO) refractionFBO->resize(width, height);
+    if (ldrFBO) ldrFBO->resize(width, height);
+    if (gBufferFBO) gBufferFBO->resize(halfW, halfH);
+    if (ssaoFBO) ssaoFBO->resize(halfW, halfH);
+    if (ssaoBlurFBO) ssaoBlurFBO->resize(halfW, halfH);
+    if (pingPongFBO[0]) pingPongFBO[0]->resize(halfW, halfH);
+    if (pingPongFBO[1]) pingPongFBO[1]->resize(halfW, halfH);
 
     stats = RenderStats{};
     opaqueQueue.clear();
@@ -192,7 +172,7 @@ void Renderer::submitLight(const PointLight& light)
     lights.push_back(light);
 }
 
-void Renderer::submit(const Mesh* mesh, Shader* shader, const Material* material, const Mat4& modelMatrix, bool castsShadows)
+void Renderer::submit(const Mesh* mesh, Shader* shader, const Material* material, const Mat4& modelMatrix, bool castsShadows, bool affectsSSAO)
 {
     if (!mesh || !shader || !material)
     {
@@ -205,7 +185,7 @@ void Renderer::submit(const Mesh* mesh, Shader* shader, const Material* material
 
     if (!isTransparent && castsShadows)
     {
-        shadowQueue.push_back({ mesh, nullptr, nullptr, modelMatrix, worldBounds, true, 0.0f });
+        shadowQueue.push_back({ mesh, nullptr, material, modelMatrix, worldBounds, true, affectsSSAO, 0.0f });
     }
 
     if (frustumCullingEnabled && !cameraFrustum.intersects(worldBounds))
@@ -221,11 +201,11 @@ void Renderer::submit(const Mesh* mesh, Shader* shader, const Material* material
         Vec3 pos = { modelMatrix.m[12], modelMatrix.m[13], modelMatrix.m[14] };
         Vec3 delta = pos - viewPos;
         float distSq = Vec3::dot(delta, delta);
-        transparentQueue.push_back({ mesh, shader, material, modelMatrix, worldBounds, false, distSq });
+        transparentQueue.push_back({ mesh, shader, material, modelMatrix, worldBounds, false, false, distSq });
     }
     else
     {
-        opaqueQueue.push_back({ mesh, shader, material, modelMatrix, worldBounds, castsShadows, 0.0f });
+        opaqueQueue.push_back({ mesh, shader, material, modelMatrix, worldBounds, castsShadows, affectsSSAO, 0.0f });
     }
 }
 
@@ -272,7 +252,23 @@ void Renderer::submitInstanced(Mesh* mesh, Shader* shader, const Material* mater
     instancedQueue.push_back(cmd);
 }
 
-void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive, bool& hasAlbedoMap, bool& hasNormalMap, bool& hasMetallicMap, bool& hasRoughnessMap, bool& hasAoMap)
+void Renderer::setCullState(bool& cullEnabled, bool wantCull)
+{
+    if (wantCull != cullEnabled)
+    {
+        if (wantCull)
+        {
+            glEnable(GL_CULL_FACE);
+        }
+        else
+        {
+            glDisable(GL_CULL_FACE);
+        }
+        cullEnabled = wantCull;
+    }
+}
+
+void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive, MaterialTexBindings& texBindings)
 {
     constexpr int MAX_POINT_LIGHTS = 8;
 
@@ -294,6 +290,22 @@ void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix,
     {
         shader->setVec3("sunDirection", sunDirection);
     }
+    if (shader->hasUniform("skyZenithColor"))
+    {
+        shader->setVec3("skyZenithColor", skyColors.zenith);
+    }
+    if (shader->hasUniform("skyHorizonColor"))
+    {
+        shader->setVec3("skyHorizonColor", skyColors.horizon);
+    }
+    if (shader->hasUniform("skyGroundColor"))
+    {
+        shader->setVec3("skyGroundColor", skyColors.ground);
+    }
+    if (shader->hasUniform("bloomThreshold"))
+    {
+        shader->setFloat("bloomThreshold", bloomThreshold);
+    }
     if (shader->hasUniform("lightSpaceMatrix"))
     {
         shader->setMat4("lightSpaceMatrix", lightSpaceMatrix);
@@ -303,29 +315,29 @@ void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix,
         shader->setVec2("screenSize", static_cast<float>(viewportWidth), static_cast<float>(viewportHeight));
     }
 
-    hasAlbedoMap    = shader->hasUniform("material.albedoMap");
-    hasNormalMap    = shader->hasUniform("material.normalMap");
-    hasMetallicMap  = shader->hasUniform("material.metallicMap");
-    hasRoughnessMap = shader->hasUniform("material.roughnessMap");
-    hasAoMap        = shader->hasUniform("material.aoMap");
+    texBindings.albedo    = shader->hasUniform("material.albedoMap");
+    texBindings.normal    = shader->hasUniform("material.normalMap");
+    texBindings.metallic  = shader->hasUniform("material.metallicMap");
+    texBindings.roughness = shader->hasUniform("material.roughnessMap");
+    texBindings.ao        = shader->hasUniform("material.aoMap");
 
-    if (hasAlbedoMap)
+    if (texBindings.albedo)
     {
         shader->setInt("material.albedoMap", 0);
     }
-    if (hasNormalMap)
+    if (texBindings.normal)
     {
         shader->setInt("material.normalMap", 1);
     }
-    if (hasMetallicMap)
+    if (texBindings.metallic)
     {
         shader->setInt("material.metallicMap", 2);
     }
-    if (hasRoughnessMap)
+    if (texBindings.roughness)
     {
         shader->setInt("material.roughnessMap", 3);
     }
-    if (hasAoMap)
+    if (texBindings.ao)
     {
         shader->setInt("material.aoMap", 4);
     }
@@ -413,9 +425,9 @@ void Renderer::bindShaderFrameData(Shader* shader, const Mat4& lightSpaceMatrix,
     }
 }
 
-void Renderer::bindMaterialTextures(const Material& mat, bool hasAlbedoMap, bool hasNormalMap, bool hasMetallicMap, bool hasRoughnessMap, bool hasAoMap)
+void Renderer::bindMaterialTextures(const Material& mat, const MaterialTexBindings& texBindings)
 {
-    if (hasAlbedoMap)
+    if (texBindings.albedo)
     {
         const Texture* tex = mat.albedoMap ? mat.albedoMap.get() : defaultWhite.get();
         if (tex)
@@ -423,7 +435,7 @@ void Renderer::bindMaterialTextures(const Material& mat, bool hasAlbedoMap, bool
             tex->bind(0);
         }
     }
-    if (hasNormalMap)
+    if (texBindings.normal)
     {
         const Texture* tex = mat.normalMap ? mat.normalMap.get() : defaultNormal.get();
         if (tex)
@@ -431,7 +443,7 @@ void Renderer::bindMaterialTextures(const Material& mat, bool hasAlbedoMap, bool
             tex->bind(1);
         }
     }
-    if (hasMetallicMap)
+    if (texBindings.metallic)
     {
         const Texture* tex = mat.metallicMap ? mat.metallicMap.get() : defaultWhite.get();
         if (tex)
@@ -439,7 +451,7 @@ void Renderer::bindMaterialTextures(const Material& mat, bool hasAlbedoMap, bool
             tex->bind(2);
         }
     }
-    if (hasRoughnessMap)
+    if (texBindings.roughness)
     {
         const Texture* tex = mat.roughnessMap ? mat.roughnessMap.get() : defaultWhite.get();
         if (tex)
@@ -447,7 +459,7 @@ void Renderer::bindMaterialTextures(const Material& mat, bool hasAlbedoMap, bool
             tex->bind(3);
         }
     }
-    if (hasAoMap)
+    if (texBindings.ao)
     {
         const Texture* tex = mat.aoMap ? mat.aoMap.get() : defaultWhite.get();
         if (tex)
@@ -457,50 +469,34 @@ void Renderer::bindMaterialTextures(const Material& mat, bool hasAlbedoMap, bool
     }
 }
 
+void Renderer::prepareMaterialPass(Shader*& activeShader, bool& cullEnabled, MaterialTexBindings& texBindings, Shader* shader, const Material& mat, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive)
+{
+    if (shader != activeShader)
+    {
+        activeShader = shader;
+        bindShaderFrameData(activeShader, lightSpaceMatrix, ssaoActive, refractionActive, texBindings);
+    }
+
+    setCullState(cullEnabled, !mat.doubleSided);
+    bindMaterialTextures(mat, texBindings);
+    activeShader->setMaterial("material", mat);
+}
+
 void Renderer::drawCommandList(const std::vector<RenderCommand>& list, const Mat4& lightSpaceMatrix, bool ssaoActive, bool refractionActive)
 {
     Shader* activeShader = nullptr;
-    bool hasAlbedoMap = false;
-    bool hasNormalMap = false;
-    bool hasMetallicMap = false;
-    bool hasRoughnessMap = false;
-    bool hasAoMap = false;
+    MaterialTexBindings texBindings;
     bool cullEnabled = true;
 
     for (const RenderCommand& cmd : list)
     {
-        if (cmd.shader != activeShader)
-        {
-            activeShader = cmd.shader;
-            bindShaderFrameData(activeShader, lightSpaceMatrix, ssaoActive, refractionActive, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
-        }
-
-        const Material& mat = *cmd.material;
-        bool wantCull = !mat.doubleSided;
-        if (wantCull != cullEnabled)
-        {
-            if (wantCull)
-            {
-                glEnable(GL_CULL_FACE);
-            }
-            else
-            {
-                glDisable(GL_CULL_FACE);
-            }
-            cullEnabled = wantCull;
-        }
-
-        bindMaterialTextures(mat, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
-        activeShader->setMaterial("material", mat);
+        prepareMaterialPass(activeShader, cullEnabled, texBindings, cmd.shader, *cmd.material, lightSpaceMatrix, ssaoActive, refractionActive);
         activeShader->setMat4("model", cmd.modelMatrix);
         cmd.mesh->draw();
         ++stats.drawCalls;
     }
 
-    if (!cullEnabled)
-    {
-        glEnable(GL_CULL_FACE);
-    }
+    setCullState(cullEnabled, true);
 }
 
 void Renderer::drawInstancedList(const Mat4& lightSpaceMatrix, bool ssaoActive)
@@ -517,11 +513,7 @@ void Renderer::drawInstancedList(const Mat4& lightSpaceMatrix, bool ssaoActive)
         });
 
     Shader* activeShader = nullptr;
-    bool hasAlbedoMap = false;
-    bool hasNormalMap = false;
-    bool hasMetallicMap = false;
-    bool hasRoughnessMap = false;
-    bool hasAoMap = false;
+    MaterialTexBindings texBindings;
     bool cullEnabled = true;
 
     for (const InstancedRenderCommand& batch : instancedQueue)
@@ -535,37 +527,12 @@ void Renderer::drawInstancedList(const Mat4& lightSpaceMatrix, bool ssaoActive)
             ? (visibleInstancePool.data() + batch.visibleOffset)
             : batch.transforms->data();
 
-        if (batch.shader != activeShader)
-        {
-            activeShader = batch.shader;
-            bindShaderFrameData(activeShader, lightSpaceMatrix, ssaoActive, false, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
-        }
-
-        const Material& mat = *batch.material;
-        bool wantCull = !mat.doubleSided;
-        if (wantCull != cullEnabled)
-        {
-            if (wantCull)
-            {
-                glEnable(GL_CULL_FACE);
-            }
-            else
-            {
-                glDisable(GL_CULL_FACE);
-            }
-            cullEnabled = wantCull;
-        }
-
-        bindMaterialTextures(mat, hasAlbedoMap, hasNormalMap, hasMetallicMap, hasRoughnessMap, hasAoMap);
-        activeShader->setMaterial("material", mat);
+        prepareMaterialPass(activeShader, cullEnabled, texBindings, batch.shader, *batch.material, lightSpaceMatrix, ssaoActive, false);
         batch.mesh->drawInstanced(drawData, batch.visibleCount);
         ++stats.drawCalls;
     }
 
-    if (!cullEnabled)
-    {
-        glEnable(GL_CULL_FACE);
-    }
+    setCullState(cullEnabled, true);
 }
 
 void Renderer::flush()
@@ -576,12 +543,15 @@ void Renderer::flush()
     if (useShadows)
     {
         Vec3 lightDir = Vec3::normalize(dirLight.direction);
-        Vec3 sceneCenter = { 0.0f, -1.5f, -4.0f };
-        Vec3 lightPos = sceneCenter - lightDir * 22.0f;
+        Vec3 lightPos = shadowSettings.center - lightDir * shadowSettings.distance;
         Vec3 up = (fabsf(lightDir.y) > 0.99f) ? Vec3{ 0.0f, 0.0f, 1.0f } : Vec3{ 0.0f, 1.0f, 0.0f };
 
-        Mat4 lightView = Mat4::lookAt(lightPos, sceneCenter, up);
-        Mat4 lightProj = Mat4::ortho(-16.0f, 16.0f, -16.0f, 16.0f, 1.0f, 55.0f);
+        Mat4 lightView = Mat4::lookAt(lightPos, shadowSettings.center, up);
+        Mat4 lightProj = Mat4::ortho(
+            -shadowSettings.halfExtent, shadowSettings.halfExtent,
+            -shadowSettings.halfExtent, shadowSettings.halfExtent,
+            shadowSettings.nearPlane, shadowSettings.farPlane
+        );
         lightSpaceMatrix = Mat4::multiply(lightProj, lightView);
         Frustum lightFrustum = Frustum::fromViewProjection(lightSpaceMatrix);
 
@@ -594,6 +564,7 @@ void Renderer::flush()
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(1.5f, 3.0f);
 
+        bool cullEnabled = true;
         shadowShader->use();
         shadowShader->setMat4("lightSpaceMatrix", lightSpaceMatrix);
 
@@ -603,6 +574,7 @@ void Renderer::flush()
             {
                 continue;
             }
+            setCullState(cullEnabled, !(cmd.material && cmd.material->doubleSided));
             shadowShader->setMat4("model", cmd.modelMatrix);
             cmd.mesh->draw();
             ++stats.drawCalls;
@@ -632,12 +604,14 @@ void Renderer::flush()
 
                 if (!instanceScratch.empty())
                 {
+                    setCullState(cullEnabled, !(batch.material && batch.material->doubleSided));
                     batch.mesh->drawInstanced(instanceScratch);
                     ++stats.drawCalls;
                 }
             }
         }
 
+        setCullState(cullEnabled, true);
         glDisable(GL_POLYGON_OFFSET_FILL);
         shadowFBO->unbind();
     }
@@ -663,16 +637,18 @@ void Renderer::flush()
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
 
+        bool cullEnabled = true;
         gBufferShader->use();
         gBufferShader->setMat4("view", viewMatrix);
         gBufferShader->setMat4("projection", projectionMatrix);
 
         for (const RenderCommand& cmd : opaqueQueue)
         {
-            if (!cmd.castsShadows)
+            if (!cmd.affectsSSAO)
             {
                 continue;
             }
+            setCullState(cullEnabled, !(cmd.material && cmd.material->doubleSided));
             gBufferShader->setMat4("model", cmd.modelMatrix);
             cmd.mesh->draw();
             ++stats.drawCalls;
@@ -690,6 +666,7 @@ void Renderer::flush()
                 {
                     continue;
                 }
+                setCullState(cullEnabled, !(batch.material && batch.material->doubleSided));
                 const Mat4* drawData = batch.useVisiblePool
                     ? (visibleInstancePool.data() + batch.visibleOffset)
                     : batch.transforms->data();
@@ -698,6 +675,7 @@ void Renderer::flush()
             }
         }
 
+        setCullState(cullEnabled, true);
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
         glBindVertexArray(screenVAO);
@@ -773,6 +751,22 @@ void Renderer::flush()
         {
             skyboxShader->setVec3("sunDirection", sunDirection);
         }
+        if (skyboxShader->hasUniform("skyZenithColor"))
+        {
+            skyboxShader->setVec3("skyZenithColor", skyColors.zenith);
+        }
+        if (skyboxShader->hasUniform("skyHorizonColor"))
+        {
+            skyboxShader->setVec3("skyHorizonColor", skyColors.horizon);
+        }
+        if (skyboxShader->hasUniform("skyGroundColor"))
+        {
+            skyboxShader->setVec3("skyGroundColor", skyColors.ground);
+        }
+        if (skyboxShader->hasUniform("bloomThreshold"))
+        {
+            skyboxShader->setFloat("bloomThreshold", bloomThreshold);
+        }
         skyboxMesh->draw();
         ++stats.drawCalls;
 
@@ -814,7 +808,18 @@ void Renderer::flush()
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
 
+        bool maskBrightAttachment = useHDR && (glColorMaski != nullptr);
+        if (maskBrightAttachment)
+        {
+            glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        }
+
         drawCommandList(transparentQueue, lightSpaceMatrix, false, doRefraction);
+
+        if (maskBrightAttachment)
+        {
+            glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        }
 
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);

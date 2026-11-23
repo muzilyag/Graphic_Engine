@@ -1,13 +1,24 @@
 #include "engine/utils/Logger.h"
-#include <iostream>
 #include <chrono>
 #include <iomanip>
+#include <iostream>
+#include <mutex>
 #include <sstream>
 #include <utility>
 
+namespace
+{
+    std::mutex& getLogMutex()
+    {
+        static std::mutex mtx;
+        return mtx;
+    }
+}
+
 void ConsoleHandler::handle(LogLevel level, const std::string& message)
 {
-    std::cout << message << std::endl;
+    (void)level;
+    std::cout << message << '\n';
 }
 
 FileHandler::FileHandler(const std::string& fileName)
@@ -25,9 +36,10 @@ FileHandler::~FileHandler()
 
 void FileHandler::handle(LogLevel level, const std::string& message)
 {
+    (void)level;
     if (file.is_open())
     {
-        file << message << std::endl;
+        file << message << '\n';
         file.flush();
     }
 }
@@ -42,10 +54,14 @@ std::string LogSystem::getTimestamp()
 {
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
-    std::tm buf;
-    
+    std::tm buf{};
+
+#ifdef _WIN32
     localtime_s(&buf, &in_time_t);
-    
+#else
+    localtime_r(&in_time_t, &buf);
+#endif
+
     std::stringstream ss;
     ss << std::put_time(&buf, "%Y-%m-%d %H:%M:%S");
     return ss.str();
@@ -53,29 +69,38 @@ std::string LogSystem::getTimestamp()
 
 void LogSystem::addHandler(std::unique_ptr<ILogHandler> handler)
 {
+    std::lock_guard<std::mutex> lock(getLogMutex());
     getHandlers().push_back(std::move(handler));
 }
 
 void LogSystem::dispatch(LogLevel level, const std::string& context, const std::string& message)
 {
-    std::string levelStr;
+    const char* levelStr = "INFO";
     switch (level)
     {
-    case LogLevel::INFO:    
-        levelStr = "INFO"; 
+    case LogLevel::INFO:
+        levelStr = "INFO";
         break;
-    case LogLevel::WARNING: 
-        levelStr = "WARN"; 
+    case LogLevel::WARNING:
+        levelStr = "WARN";
         break;
-    case LogLevel::ERR:     
+    case LogLevel::ERR:
         levelStr = "ERROR";
+        break;
+    default:
+        levelStr = "UNKNOWN";
+        break;
     }
 
     std::string finalMsg = "[" + getTimestamp() + "] [" + levelStr + "] [" + context + "] " + message;
 
+    std::lock_guard<std::mutex> lock(getLogMutex());
     for (auto& h : getHandlers())
     {
-        h->handle(level, finalMsg);
+        if (h)
+        {
+            h->handle(level, finalMsg);
+        }
     }
 }
 

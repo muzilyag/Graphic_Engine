@@ -19,14 +19,19 @@ namespace
         }
     };
 
+    void hashCombine(size_t& seed, size_t value)
+    {
+        seed ^= value + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
+
     struct VertexKeyHash
     {
         size_t operator()(const VertexKey& k) const
         {
-            size_t h1 = std::hash<int>{}(k.v);
-            size_t h2 = std::hash<int>{}(k.vt);
-            size_t h3 = std::hash<int>{}(k.vn);
-            return h1 ^ (h2 << 1) ^ (h3 << 2);
+            size_t seed = std::hash<int>{}(k.v);
+            hashCombine(seed, std::hash<int>{}(k.vt));
+            hashCombine(seed, std::hash<int>{}(k.vn));
+            return seed;
         }
     };
 

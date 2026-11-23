@@ -1,5 +1,6 @@
 #include "engine/core/Application.h"
 #include "engine/platform/GLLoader.h"
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 
@@ -11,8 +12,30 @@ Application::Application(int width, int height, const char* title)
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
     resources.initDefaults();
-    renderer.init(resources);
+    renderer.init(resources, window.getWidth(), window.getHeight());
     runTime = 0.0f;
+}
+
+bool Application::isKeyPressed(int keyCode) const
+{
+    if (!window.isFocused() || keyCode < 0 || keyCode >= 256)
+    {
+        return false;
+    }
+    const bool* keys = window.getKeys();
+    return keys[keyCode] && !prevKeys[keyCode];
+}
+
+void Application::syncPreviousInput()
+{
+    if (window.isFocused())
+    {
+        std::memcpy(prevKeys, window.getKeys(), sizeof(prevKeys));
+    }
+    else
+    {
+        std::memset(prevKeys, 0, sizeof(prevKeys));
+    }
 }
 
 void Application::run()
@@ -39,6 +62,7 @@ void Application::run()
         runTime += dt;
         updateInput(dt);
         onUpdate(dt);
+        syncPreviousInput();
         onRender();
         window.swapBuffers();
         updateWindowTitle(rawDt);
@@ -138,68 +162,37 @@ void Application::updateInput(float dt)
 
     if (window.isFocused())
     {
-        bool* keys = window.getKeys();
-        camera.processKeyboard(keys, dt);
+        camera.processKeyboard(window.getKeys(), dt);
 
-        bool f5Down = keys[VK_F5];
-        if (f5Down && !wasF5Down)
+        if (isKeyPressed(VK_F5))
         {
             resources.reloadAllShaders();
         }
-        wasF5Down = f5Down;
-
-        bool f2Down = keys[VK_F2];
-        if (f2Down && !wasF2Down)
+        if (isKeyPressed(VK_F2))
         {
             wireframeMode = !wireframeMode;
             renderer.setWireframe(wireframeMode);
         }
-        wasF2Down = f2Down;
-
-        bool f3Down = keys[VK_F3];
-        if (f3Down && !wasF3Down)
+        if (isKeyPressed(VK_F3))
         {
             renderer.setBloomEnabled(!renderer.isBloomEnabled());
         }
-        wasF3Down = f3Down;
-
-        bool f4Down = keys[VK_F4];
-        if (f4Down && !wasF4Down)
+        if (isKeyPressed(VK_F4))
         {
             renderer.setFxaaEnabled(!renderer.isFxaaEnabled());
         }
-        wasF4Down = f4Down;
-
-        bool f6Down = keys[VK_F6];
-        if (f6Down && !wasF6Down)
+        if (isKeyPressed(VK_F6))
         {
             renderer.setFrustumCullingEnabled(!renderer.isFrustumCullingEnabled());
         }
-        wasF6Down = f6Down;
-
-        bool f7Down = keys[VK_F7];
-        if (f7Down && !wasF7Down)
+        if (isKeyPressed(VK_F7))
         {
             renderer.setSSAOEnabled(!renderer.isSSAOEnabled());
         }
-        wasF7Down = f7Down;
-
-        bool f8Down = keys[VK_F8];
-        if (f8Down && !wasF8Down)
+        if (isKeyPressed(VK_F8))
         {
             renderer.setRefractionEnabled(!renderer.isRefractionEnabled());
         }
-        wasF8Down = f8Down;
-    }
-    else
-    {
-        wasF5Down = false;
-        wasF2Down = false;
-        wasF3Down = false;
-        wasF4Down = false;
-        wasF6Down = false;
-        wasF7Down = false;
-        wasF8Down = false;
     }
 }
 

@@ -12,6 +12,10 @@ Texture::Texture(const std::string& path) : logger("Texture")
 
     GLenum format = (img.channels == 4) ? GL_RGBA : GL_RGB;
 
+    if (glActiveTexture)
+    {
+        glActiveTexture(GL_TEXTURE0);
+    }
     glGenTextures(1, &ID);
     glBindTexture(GL_TEXTURE_2D, ID);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -29,6 +33,7 @@ Texture::Texture(const std::string& path) : logger("Texture")
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     }
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     logger.info("Texture loaded from file: " + path);
 }
@@ -37,12 +42,17 @@ Texture::Texture(unsigned char r, unsigned char g, unsigned char b, unsigned cha
 {
     unsigned char pixel[4] = { r, g, b, a };
 
+    if (glActiveTexture)
+    {
+        glActiveTexture(GL_TEXTURE0);
+    }
     glGenTextures(1, &ID);
     glBindTexture(GL_TEXTURE_2D, ID);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 Texture::~Texture()
